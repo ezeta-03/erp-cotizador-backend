@@ -1,3 +1,4 @@
+// prisma/schema.prisma
 generator client {
   provider = "prisma-client-js"
 }
@@ -7,15 +8,26 @@ datasource db {
   url      = env("DATABASE_URL")
 }
 
-model User {
+enum Rol {
+  ADMIN
+  VENTAS
+  CLIENTE
+}
+
+model Usuario {
   id        Int      @id @default(autoincrement())
   nombre    String
   email     String   @unique
   password  String
-  role      Role
-  createdAt DateTime @default(now())
+  role      Rol
+  activo    Boolean  @default(true)
+
+  clienteId Int?
+  cliente   Cliente?
 
   cotizaciones Cotizacion[]
+
+  createdAt DateTime @default(now())
 }
 
 model Cliente {
@@ -26,54 +38,46 @@ model Cliente {
   correo    String?
   direccion String?
 
+  usuarioId Int?     @unique
+  usuario   Usuario? @relation(fields: [usuarioId], references: [id])
+
   cotizaciones Cotizacion[]
 }
 
 model Producto {
-  id                 Int    @id @default(autoincrement())
-  nombre             String
-  precio_material    Float
-  precio_mano_obra   Float
+  id                Int      @id @default(autoincrement())
+  nombre            String
+  precio_material   Float
+  precio_mano_obra  Float
+  createdAt         DateTime @default(now())
 
-  cotizacionItems    CotizacionItem[]   // 👈 relación inversa
+  items CotizacionItem[]
 }
 
-
 model Cotizacion {
-  id         Int      @id @default(autoincrement())
-  numero     String
-  estado     String   @default("BORRADOR")
-  margen     Float
-  notas      String?
-  total      Float
+  id        Int      @id @default(autoincrement())
+  numero    String   @unique
+  margen    Float
+  total     Float
+  createdAt DateTime @default(now())
 
-  clienteId  Int
-  usuarioId  Int
+  clienteId Int
+  usuarioId Int
 
-  createdAt  DateTime @default(now())
+  cliente Cliente @relation(fields: [clienteId], references: [id])
+  usuario Usuario @relation(fields: [usuarioId], references: [id])
 
-  cliente    Cliente @relation(fields: [clienteId], references: [id])
-  usuario    User    @relation(fields: [usuarioId], references: [id])
-
-  items      CotizacionItem[]
+  items CotizacionItem[]
 }
 
 model CotizacionItem {
-  id           Int    @id @default(autoincrement())
+  id           Int @id @default(autoincrement())
   cotizacionId Int
   productoId   Int
-
   cantidad     Int
   precio       Float
   subtotal     Float
 
   cotizacion Cotizacion @relation(fields: [cotizacionId], references: [id])
   producto   Producto   @relation(fields: [productoId], references: [id])
-}
-
-enum Role {
-  ADMIN
-  GERENCIA
-  VENTAS
-  CLIENTE
 }

@@ -1,47 +1,60 @@
 const { PrismaClient } = require("@prisma/client");
-const bcrypt = require("bcrypt");
+const bcrypt = require("bcryptjs");
 
 const prisma = new PrismaClient();
 
 async function main() {
-  console.log("🌱 Iniciando seed de usuarios...");
+  const password = await bcrypt.hash("123456", 10);
 
-  const passwordAdmin = await bcrypt.hash("admin123", 10);
-  const passwordVentas = await bcrypt.hash("ventas123", 10);
-  const passwordCliente = await bcrypt.hash("cliente123", 10);
-
-  await prisma.user.createMany({
-    data: [
-      {
-        nombre: "Administrador",
-        email: "admin@demo.com",
-        password: passwordAdmin,
-        role: "ADMIN"
-      },
-      {
-        nombre: "Vendedor",
-        email: "ventas@demo.com",
-        password: passwordVentas,
-        role: "VENTAS"
-      },
-      {
-        nombre: "Cliente Demo",
-        email: "cliente@demo.com",
-        password: passwordCliente,
-        role: "CLIENTE"
-      }
-    ],
-    skipDuplicates: true
+  // 🔹 ADMIN
+  await prisma.usuario.create({
+    data: {
+      nombre: "Admin Principal",
+      email: "admin@demo.com",
+      password,
+      role: "ADMIN",
+    },
   });
 
-  console.log("✅ Usuarios creados correctamente");
+  // 🔹 VENDEDORES
+  await prisma.usuario.create({
+    data: {
+      nombre: "Juan Ventas",
+      email: "ventas1@demo.com",
+      password,
+      role: "VENTAS",
+    },
+  });
+
+  await prisma.usuario.create({
+    data: {
+      nombre: "Ana Ventas",
+      email: "ventas2@demo.com",
+      password,
+      role: "VENTAS",
+    },
+  });
+
+  // 🔹 CLIENTE + USUARIO
+  await prisma.usuario.create({
+    data: {
+      nombre: "Carlos Cliente",
+      email: "cliente@demo.com",
+      password,
+      role: "CLIENTE",
+      cliente: {
+        create: {
+          nombre: "Carlos Cliente",
+          correo: "cliente@demo.com",
+          telefono: "999888777",
+        },
+      },
+    },
+  });
+
+  console.log("✅ Seed ejecutado correctamente");
 }
 
 main()
-  .catch((e) => {
-    console.error("❌ Error en seed:", e);
-    process.exit(1);
-  })
-  .finally(async () => {
-    await prisma.$disconnect();
-  });
+  .catch(console.error)
+  .finally(() => prisma.$disconnect());

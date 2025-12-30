@@ -1,15 +1,23 @@
-const prisma = require("../config/prisma");
-const bcrypt = require("bcrypt");
+const bcrypt = require("bcryptjs");
 const jwt = require("jsonwebtoken");
+const prisma = require("../config/prisma");
 
 exports.login = async (req, res) => {
   const { email, password } = req.body;
 
-  const user = await prisma.user.findUnique({ where: { email } });
-  if (!user) return res.status(401).json({ message: "Credenciales inválidas" });
+  const user = await prisma.usuario.findUnique({
+    where: { email },
+  });
 
-  const match = await bcrypt.compare(password, user.password);
-  if (!match) return res.status(401).json({ message: "Credenciales inválidas" });
+  if (!user) {
+    return res.status(401).json({ message: "Usuario no existe" });
+  }
+
+  const ok = await bcrypt.compare(password, user.password);
+
+  if (!ok) {
+    return res.status(401).json({ message: "Contraseña incorrecta" });
+  }
 
   const token = jwt.sign(
     { id: user.id, role: user.role },
@@ -17,12 +25,5 @@ exports.login = async (req, res) => {
     { expiresIn: "8h" }
   );
 
-  res.json({
-    token,
-    user: {
-      id: user.id,
-      nombre: user.nombre,
-      role: user.role
-    }
-  });
+  res.json({ token });
 };
