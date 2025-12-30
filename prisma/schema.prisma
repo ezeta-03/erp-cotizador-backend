@@ -1,0 +1,79 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "mysql"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id        Int      @id @default(autoincrement())
+  nombre    String
+  email     String   @unique
+  password  String
+  role      Role
+  createdAt DateTime @default(now())
+
+  cotizaciones Cotizacion[]
+}
+
+model Cliente {
+  id        Int      @id @default(autoincrement())
+  nombre    String
+  documento String?
+  telefono  String?
+  correo    String?
+  direccion String?
+
+  cotizaciones Cotizacion[]
+}
+
+model Producto {
+  id                 Int    @id @default(autoincrement())
+  nombre             String
+  precio_material    Float
+  precio_mano_obra   Float
+
+  cotizacionItems    CotizacionItem[]   // 👈 relación inversa
+}
+
+
+model Cotizacion {
+  id         Int      @id @default(autoincrement())
+  numero     String
+  estado     String   @default("BORRADOR")
+  margen     Float
+  notas      String?
+  total      Float
+
+  clienteId  Int
+  usuarioId  Int
+
+  createdAt  DateTime @default(now())
+
+  cliente    Cliente @relation(fields: [clienteId], references: [id])
+  usuario    User    @relation(fields: [usuarioId], references: [id])
+
+  items      CotizacionItem[]
+}
+
+model CotizacionItem {
+  id           Int    @id @default(autoincrement())
+  cotizacionId Int
+  productoId   Int
+
+  cantidad     Int
+  precio       Float
+  subtotal     Float
+
+  cotizacion Cotizacion @relation(fields: [cotizacionId], references: [id])
+  producto   Producto   @relation(fields: [productoId], references: [id])
+}
+
+enum Role {
+  ADMIN
+  GERENCIA
+  VENTAS
+  CLIENTE
+}
