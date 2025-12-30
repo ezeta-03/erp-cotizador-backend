@@ -27,4 +27,7 @@ router.get(
   controller.ultimaCotizacionCliente
 );
 
+// Descargar PDF de cotización
+router.get("/:id/pdf", auth, controller.generarPdf);
+
 module.exports = router;

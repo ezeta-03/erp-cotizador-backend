@@ -1,4 +1,6 @@
 const prisma = require("../config/prisma");
+const puppeteer = require("puppeteer");
+const cotizacionTemplate = require("../templates/cotizacionPdf.template");
 
 // Crear cotización completa
 exports.crearCotizacion = async (req, res) => {
@@ -127,5 +129,61 @@ exports.ultimaCotizacionCliente = async (req, res) => {
     res.json(cotizacion);
   } catch (error) {
     res.status(500).json({ message: "Error obteniendo cotización" });
+  }
+};
+
+exports.generarPdf = async (req, res) => {
+  try {
+    const { id } = req.params;
+
+    const cotizacion = await prisma.cotizacion.findUnique({
+      where: { id: Number(id) },
+      include: {
+        cliente: true,
+        items: {
+          include: {
+            producto: true
+          }
+        }
+      }
+    });
+
+    if (!cotizacion) {
+      return res.status(404).json({ message: "Cotización no encontrada" });
+    }
+
+    // Permisos básicos
+    if (
+      req.user.role === "VENTAS" &&
+      cotizacion.usuarioId !== req.user.id
+    ) {
+      return res.sendStatus(403);
+    }
+
+    const browser = await puppeteer.launch({
+      headless: "new"
+    });
+
+    const page = await browser.newPage();
+    await page.setContent(cotizacionTemplate(cotizacion), {
+      waitUntil: "networkidle0"
+    });
+
+    const pdfBuffer = await page.pdf({
+      format: "A4",
+      printBackground: true
+    });
+
+    await browser.close();
+
+    res.set({
+      "Content-Type": "application/pdf",
+      "Content-Disposition": `attachment; filename=cotizacion-${cotizacion.numero}.pdf`
+    });
+
+    res.send(pdfBuffer);
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ message: "Error generando PDF" });
   }
 };
