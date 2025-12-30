@@ -3,16 +3,22 @@ const jwt = require("jsonwebtoken");
 module.exports = (req, res, next) => {
   const authHeader = req.headers.authorization;
 
-  if (!authHeader) {
-    return res.sendStatus(401);
+  let token = authHeader?.split(" ")[1];
+
+  // ✅ permitir token por query (PDF)
+  if (!token && req.query.token) {
+    token = req.query.token;
   }
 
-  const token = authHeader.split(" ")[1];
+  if (!token) {
+    return res.status(401).json({ message: "No token" });
+  }
 
   try {
-    req.user = jwt.verify(token, process.env.JWT_SECRET);
+    const decoded = jwt.verify(token, process.env.JWT_SECRET);
+    req.user = decoded;
     next();
-  } catch (error) {
-    return res.sendStatus(401);
+  } catch {
+    res.status(401).json({ message: "Token inválido" });
   }
 };
