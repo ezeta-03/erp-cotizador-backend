@@ -97,8 +97,8 @@ module.exports = (cotizacion) => {
 
   </div>
   <div class="company">
-    <strong>ZAÁZMAGO</strong><br/>
-    contacto@empresa.com<br/>
+    <strong>ZAAZMAGO</strong><br/>
+    ventas@zaazmago.com<br/>
     +51 999 999 999
   </div>
 </div>
@@ -152,6 +152,7 @@ ${items
 </div>
 
 <div class="conditions">
+  <p><strong>Estado:</strong> ${cotizacion.estado}</p>
   <p><strong>Condiciones comerciales:</strong></p>
   <ul>
     <li>Validez de la oferta: 7 días</li>
