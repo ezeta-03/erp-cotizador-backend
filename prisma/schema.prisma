@@ -35,7 +35,7 @@ model Cliente {
   nombre    String
   documento String?
   telefono  String?
-  correo    String?
+  email    String?
   direccion String?
 
   usuarioId Int?     @unique

@@ -6,47 +6,114 @@ const prisma = new PrismaClient();
 async function main() {
   const password = await bcrypt.hash("123456", 10);
 
-  // 🔹 ADMIN
-  await prisma.usuario.create({
-    data: {
-      nombre: "Admin Principal",
-      email: "admin@demo.com",
-      password,
-      role: "ADMIN",
-    },
+  /* =========================
+     ADMINS (2)
+  ========================= */
+  await prisma.usuario.createMany({
+    data: [
+      {
+        nombre: "Admin Principal",
+        email: "admin1@demo.com",
+        password,
+        role: "ADMIN",
+      },
+      {
+        nombre: "Admin Secundario",
+        email: "admin2@demo.com",
+        password,
+        role: "ADMIN",
+      },
+    ],
   });
 
-  // 🔹 VENDEDORES
-  await prisma.usuario.create({
-    data: {
-      nombre: "Juan Ventas",
-      email: "ventas1@demo.com",
-      password,
-      role: "VENTAS",
-    },
+  /* =========================
+     VENDEDORES (3)
+  ========================= */
+  await prisma.usuario.createMany({
+    data: [
+      {
+        nombre: "Juan Ventas",
+        email: "ventas1@demo.com",
+        password,
+        role: "VENTAS",
+      },
+      {
+        nombre: "Ana Ventas",
+        email: "ventas2@demo.com",
+        password,
+        role: "VENTAS",
+      },
+      {
+        nombre: "Pedro Ventas",
+        email: "ventas3@demo.com",
+        password,
+        role: "VENTAS",
+      },
+    ],
   });
 
-  await prisma.usuario.create({
-    data: {
-      nombre: "Ana Ventas",
-      email: "ventas2@demo.com",
-      password,
-      role: "VENTAS",
-    },
-  });
-
-  // 🔹 CLIENTE + USUARIO
+  /* =========================
+     CLIENTES (4) con USUARIO
+  ========================= */
   await prisma.usuario.create({
     data: {
       nombre: "Carlos Cliente",
-      email: "cliente@demo.com",
+      email: "cliente1@demo.com",
       password,
       role: "CLIENTE",
       cliente: {
         create: {
-          nombre: "Carlos Cliente",
-          correo: "cliente@demo.com",
-          telefono: "999888777",
+          nombre: "Carlos Cliente SAC",
+          email: "cliente1@demo.com",
+          telefono: "999111111",
+        },
+      },
+    },
+  });
+
+  await prisma.usuario.create({
+    data: {
+      nombre: "Maria Cliente",
+      email: "cliente2@demo.com",
+      password,
+      role: "CLIENTE",
+      cliente: {
+        create: {
+          nombre: "Maria Cliente EIRL",
+          email: "cliente2@demo.com",
+          telefono: "999222222",
+        },
+      },
+    },
+  });
+
+  await prisma.usuario.create({
+    data: {
+      nombre: "Luis Cliente",
+      email: "cliente3@demo.com",
+      password,
+      role: "CLIENTE",
+      cliente: {
+        create: {
+          nombre: "Luis Cliente SAC",
+          email: "cliente3@demo.com",
+          telefono: "999333333",
+        },
+      },
+    },
+  });
+
+  await prisma.usuario.create({
+    data: {
+      nombre: "Sofia Cliente",
+      email: "cliente4@demo.com",
+      password,
+      role: "CLIENTE",
+      cliente: {
+        create: {
+          nombre: "Sofia Cliente SAC",
+          email: "cliente4@demo.com",
+          telefono: "999444444",
         },
       },
     },
@@ -56,5 +123,9 @@ async function main() {
 }
 
 main()
-  .catch(console.error)
-  .finally(() => prisma.$disconnect());
+  .catch((e) => {
+    console.error("❌ Error en seed:", e);
+  })
+  .finally(async () => {
+    await prisma.$disconnect();
+  });
