@@ -6,7 +6,7 @@ const cotizacionesRoutes = require("./routes/cotizaciones.routes");
 const clientesRoutes = require("./routes/clientes.routes");
 const productosRoutes = require("./routes/productos.routes");
 const dashboardRoutes = require("./routes/dashboard.routes");
-
+const statsRoutes = require("./routes/stats.routes");
 const app = express();
 
 app.use(cors());
@@ -17,5 +17,6 @@ app.use("/api/cotizaciones", cotizacionesRoutes);
 app.use("/api/clientes", clientesRoutes);
 app.use("/api/productos", productosRoutes);
 app.use("/api/dashboard", dashboardRoutes);
+app.use("/api/stats", statsRoutes);
 
 module.exports = app;

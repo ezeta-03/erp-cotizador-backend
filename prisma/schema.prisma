@@ -18,6 +18,7 @@ enum EstadoCotizacion {
   PENDIENTE
   APROBADA
   RECHAZADA
+  FACTURADA
 }
 
 model Usuario {
@@ -32,6 +33,7 @@ model Usuario {
   cliente   Cliente?
 
   cotizaciones Cotizacion[]
+  metas        MetaMensual[]
 
   createdAt DateTime @default(now())
 }
@@ -88,4 +90,19 @@ model CotizacionItem {
 
   cotizacion Cotizacion @relation(fields: [cotizacionId], references: [id])
   producto   Producto   @relation(fields: [productoId], references: [id])
+}
+
+model MetaMensual {
+  id        Int      @id @default(autoincrement())
+  usuarioId Int
+  monto     Float
+  mes       Int      // 1-12
+  anio      Int      // 2025, 2026...
+  
+  usuario   Usuario  @relation(fields: [usuarioId], references: [id])
+  
+  createdAt DateTime @default(now())
+  
+  @@unique([usuarioId, mes, anio])
+  @@index([mes, anio])
 }
