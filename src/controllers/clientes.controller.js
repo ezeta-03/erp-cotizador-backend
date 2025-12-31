@@ -10,7 +10,7 @@ exports.crear = async (req, res) => {
         nombre: req.body.nombre,
         documento: req.body.documento,
         telefono: req.body.telefono,
-        correo: req.body.correo,
+        email: req.body.email,
         direccion: req.body.direccion
       }
     });

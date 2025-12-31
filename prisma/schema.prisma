@@ -14,6 +14,12 @@ enum Rol {
   CLIENTE
 }
 
+enum EstadoCotizacion {
+  PENDIENTE
+  APROBADA
+  RECHAZADA
+}
+
 model Usuario {
   id        Int      @id @default(autoincrement())
   nombre    String
@@ -59,6 +65,8 @@ model Cotizacion {
   numero    String   @unique
   margen    Float
   total     Float
+  estado    EstadoCotizacion @default(PENDIENTE)
+  
   createdAt DateTime @default(now())
 
   clienteId Int

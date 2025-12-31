@@ -2,103 +2,86 @@ const prisma = require("../config/prisma");
 const puppeteer = require("puppeteer");
 const cotizacionTemplate = require("../templates/cotizacionPdf.template");
 
-// Crear cotización completa
+/* =========================
+   CREAR COTIZACIÓN
+========================= */
 exports.crearCotizacion = async (req, res) => {
   try {
-    const { numero, clienteId, margen, notas, items } = req.body;
+    const { numero, clienteId, margen, items } = req.body;
 
-    // 1. Validar cliente
+    if (!items || items.length === 0) {
+      return res.status(400).json({ message: "Debe agregar productos" });
+    }
+
     const cliente = await prisma.cliente.findUnique({
-      where: { id: Number(clienteId) }
+      where: { id: Number(clienteId) },
     });
 
     if (!cliente) {
       return res.status(400).json({ message: "Cliente no existe" });
     }
 
-    if (!items || items.length === 0) {
-      return res.status(400).json({ message: "La cotización debe tener items" });
-    }
-
-    // 2. Validar productos y calcular subtotales
     let subtotal = 0;
-
     const itemsData = [];
 
     for (const item of items) {
-      const producto = await prisma.producto.findUnique({
-        where: { id: Number(item.productoId) }
-      });
-
-      if (!producto) {
-        return res
-          .status(400)
-          .json({ message: `Producto ${item.productoId} no existe` });
-      }
-
-      const precioUnitario = Number(item.precio);
       const cantidad = Number(item.cantidad);
-      const sub = precioUnitario * cantidad;
+      const precio = Number(item.precio);
+      const sub = cantidad * precio;
 
       subtotal += sub;
 
       itemsData.push({
-        productoId: producto.id,
+        productoId: Number(item.productoId),
         cantidad,
-        precio: precioUnitario,
-        subtotal: sub
+        precio,
+        subtotal: sub,
       });
     }
 
-    const total = subtotal + subtotal * (margen / 100);
+    const total = subtotal + subtotal * (Number(margen) / 100);
 
-    // 3. Crear cotización
     const cotizacion = await prisma.cotizacion.create({
       data: {
         numero,
         clienteId: cliente.id,
         usuarioId: req.user.id,
         margen: Number(margen),
-        notas,
         total,
+        // estado = PENDIENTE por default
         items: {
-          create: itemsData
-        }
+          create: itemsData,
+        },
       },
       include: {
         cliente: true,
         items: {
-          include: {
-            producto: true
-          }
-        }
-      }
+          include: { producto: true },
+        },
+      },
     });
 
     res.json(cotizacion);
   } catch (error) {
-    console.error(error);
+    console.error("❌ Crear cotización:", error);
     res.status(500).json({ message: "Error al crear cotización" });
   }
 };
 
-// Listar cotizaciones según rol
+/* =========================
+   LISTAR (ADMIN / VENTAS)
+========================= */
 exports.listarCotizaciones = async (req, res) => {
   try {
-    const user = req.user;
-
-    let where = {};
-
-    if (user.role === "VENTAS") {
-      where.usuarioId = user.id;
-    }
+    const where =
+      req.user.role === "VENTAS"
+        ? { usuarioId: req.user.id }
+        : {};
 
     const cotizaciones = await prisma.cotizacion.findMany({
       where,
-      include: {
-        cliente: true
-      },
-      orderBy: { createdAt: "desc" }
+      include: { cliente: true },
+      orderBy: { createdAt: "desc" },
     });
 
     res.json(cotizaciones);
@@ -107,23 +90,30 @@ exports.listarCotizaciones = async (req, res) => {
   }
 };
 
-// Cliente: última cotización
+/* =========================
+   CLIENTE: ÚLTIMA COTIZACIÓN
+========================= */
 exports.ultimaCotizacionCliente = async (req, res) => {
   try {
-    const user = req.user;
+    const usuario = await prisma.usuario.findUnique({
+      where: { id: req.user.id },
+      include: { cliente: true },
+    });
 
-    if (user.role !== "CLIENTE") {
-      return res.sendStatus(403);
+    if (!usuario?.cliente) {
+      return res.json(null);
     }
 
     const cotizacion = await prisma.cotizacion.findFirst({
-      where: { clienteId: user.id },
+      where: {
+        clienteId: usuario.cliente.id,
+      },
       include: {
         items: {
-          include: { producto: true }
-        }
+          include: { producto: true },
+        },
       },
-      orderBy: { createdAt: "desc" }
+      orderBy: { createdAt: "desc" },
     });
 
     res.json(cotizacion);
@@ -132,27 +122,62 @@ exports.ultimaCotizacionCliente = async (req, res) => {
   }
 };
 
-exports.generarPdf = async (req, res) => {
+/* =========================
+   CLIENTE: RESPONDER
+========================= */
+exports.responderCotizacion = async (req, res) => {
   try {
     const { id } = req.params;
+    const { estado, comentario } = req.body;
+
+    if (!["ACEPTADA", "RECHAZADA"].includes(estado)) {
+      return res.status(400).json({ message: "Estado inválido" });
+    }
 
     const cotizacion = await prisma.cotizacion.findUnique({
       where: { id: Number(id) },
-      include: {
-        cliente: true,
-        items: {
-          include: {
-            producto: true
-          }
-        }
-      }
+      include: { cliente: true },
     });
 
-    if (!cotizacion) {
-      return res.status(404).json({ message: "Cotización no encontrada" });
+    if (!cotizacion || cotizacion.cliente.usuarioId !== req.user.id) {
+      return res.status(403).json({ message: "No autorizado" });
     }
 
-    // Permisos básicos
+    if (cotizacion.estado !== "PENDIENTE") {
+      return res.status(400).json({ message: "Ya fue respondida" });
+    }
+
+    const updated = await prisma.cotizacion.update({
+      where: { id: Number(id) },
+      data: {
+        estado,
+        respuestaComentario: comentario || null,
+        respondidaAt: new Date(),
+      },
+    });
+
+    res.json(updated);
+  } catch (error) {
+    res.status(500).json({ message: "Error respondiendo cotización" });
+  }
+};
+
+/* =========================
+   PDF
+========================= */
+exports.generarPdf = async (req, res) => {
+  try {
+    const cotizacion = await prisma.cotizacion.findUnique({
+      where: { id: Number(req.params.id) },
+      include: {
+        cliente: true,
+        items: { include: { producto: true } },
+      },
+    });
+
+    if (!cotizacion) return res.sendStatus(404);
+
+    // Seguridad
     if (
       req.user.role === "VENTAS" &&
       cotizacion.usuarioId !== req.user.id
@@ -160,30 +185,60 @@ exports.generarPdf = async (req, res) => {
       return res.sendStatus(403);
     }
 
-    const browser = await puppeteer.launch({
-      headless: "new"
-    });
+    if (
+      req.user.role === "CLIENTE" &&
+      cotizacion.cliente.usuarioId !== req.user.id
+    ) {
+      return res.sendStatus(403);
+    }
 
+    const browser = await puppeteer.launch({ headless: "new" });
     const page = await browser.newPage();
-    await page.setContent(cotizacionTemplate(cotizacion), {
-      waitUntil: "networkidle0"
-    });
 
-    const pdfBuffer = await page.pdf({
-      format: "A4",
-      printBackground: true
-    });
+    // 👇 TEMPLATE SIN MOSTRAR MARGEN
+    await page.setContent(cotizacionTemplate(cotizacion));
+    const pdf = await page.pdf({ format: "A4", printBackground: true });
 
     await browser.close();
 
     res.set({
       "Content-Type": "application/pdf",
-      "Content-Disposition": `attachment; filename=cotizacion-${cotizacion.numero}.pdf`
+      "Content-Disposition": `attachment; filename=COT-${cotizacion.numero}.pdf`,
     });
 
-    res.send(pdfBuffer);
+    res.send(pdf);
   } catch (error) {
     console.error(error);
     res.status(500).json({ message: "Error generando PDF" });
+  }
+};
+
+// ADMIN y VENTAS: histórico de cotizaciones
+exports.historicoCotizaciones = async (req, res) => {
+  try {
+    const user = req.user;
+
+    let where = {};
+
+    // 🔐 VENTAS solo ve las suyas
+    if (user.role === "VENTAS") {
+      where.usuarioId = user.id;
+    }
+
+    const cotizaciones = await prisma.cotizacion.findMany({
+      where,
+      include: {
+        cliente: true,
+        usuario: {
+          select: { nombre: true, role: true },
+        },
+      },
+      orderBy: { createdAt: "desc" },
+    });
+
+    res.json(cotizaciones);
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ message: "Error obteniendo histórico" });
   }
 };

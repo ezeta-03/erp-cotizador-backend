@@ -19,15 +19,31 @@ router.get(
   controller.listarCotizaciones
 );
 
+// 🔥 HISTÓRICO (ADMIN, VENTAS)
+router.get(
+  "/historico",
+  auth,
+  allowRoles("ADMIN", "VENTAS"),
+  controller.historicoCotizaciones
+);
+
 // Cliente: ver última cotización
 router.get(
-  "/mi-ultima",
+  "/mia",
   auth,
   allowRoles("CLIENTE"),
   controller.ultimaCotizacionCliente
 );
 
-// Descargar PDF de cotización
+// Cliente: aceptar / rechazar cotización
+router.post(
+  "/:id/responder",
+  auth,
+  allowRoles("CLIENTE"),
+  controller.responderCotizacion // 🔴 ESTE ERA EL PROBLEMA
+);
+
+// Descargar PDF
 router.get("/:id/pdf", auth, controller.generarPdf);
 
 module.exports = router;
