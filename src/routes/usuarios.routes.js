@@ -6,7 +6,7 @@ const usuariosController = require("../controllers/usuarios.controller");
 // Solo autenticación a nivel de router; roles por ruta
 router.use(auth);
 
-router.get("/", allowRoles("ADMIN", "VENTAS"), usuariosController.listar);
+router.get("/", allowRoles("ADMIN"), usuariosController.listar);
 router.post("/", allowRoles("ADMIN"), usuariosController.crear);
 router.put("/:id", allowRoles("ADMIN"), usuariosController.actualizar);
 router.delete("/:id", allowRoles("ADMIN"), usuariosController.eliminar);
