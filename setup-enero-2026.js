@@ -1,0 +1,236 @@
+// backend/setup-enero-2026.js
+const { PrismaClient } = require('@prisma/client');
+const prisma = new PrismaClient();
+
+async function setup() {
+  try {
+    console.log('🚀 Configurando datos para ENERO 2026...\n');
+
+    const mes = 1; // Enero
+    const anio = 2026;
+    const primerDia = new Date(2026, 0, 1); // 1 de enero 2026
+    const ultimoDia = new Date(2026, 0, 31, 23, 59, 59); // 31 de enero 2026
+
+    // ==================== PASO 1: VERIFICAR VENDEDORES ====================
+    console.log('👥 PASO 1: Verificando vendedores...');
+    
+    const vendedores = await prisma.usuario.findMany({
+      where: { 
+        role: 'VENTAS',
+        activo: true 
+      }
+    });
+
+    if (vendedores.length === 0) {
+      console.log('⚠️  No hay vendedores. Créalos primero.');
+      return;
+    }
+
+    console.log(`✅ ${vendedores.length} vendedores encontrados:`);
+    vendedores.forEach(v => console.log(`   - ${v.nombre} (${v.email})`));
+
+    // ==================== PASO 2: CREAR/ACTUALIZAR METAS ENERO 2026 ====================
+    console.log('\n🎯 PASO 2: Configurando metas para ENERO 2026...');
+    
+    const metasConfig = [
+      { monto: 50000, vendedorIndex: 0 }, // Juan: 50k
+      { monto: 45000, vendedorIndex: 1 }, // Ana: 45k
+      { monto: 55000, vendedorIndex: 2 }, // Pedro: 55k (si existe)
+    ];
+
+    for (let i = 0; i < vendedores.length; i++) {
+      const vendedor = vendedores[i];
+      const montoMeta = metasConfig[i]?.monto || 50000;
+
+      await prisma.metaMensual.upsert({
+        where: {
+          usuarioId_mes_anio: {
+            usuarioId: vendedor.id,
+            mes,
+            anio
+          }
+        },
+        update: {
+          monto: montoMeta
+        },
+        create: {
+          usuarioId: vendedor.id,
+          monto: montoMeta,
+          mes,
+          anio
+        }
+      });
+
+      console.log(`   ✅ ${vendedor.nombre}: S/ ${montoMeta.toLocaleString('es-PE')}`);
+    }
+
+    // ==================== PASO 3: OBTENER/CREAR CLIENTE Y PRODUCTO ====================
+    console.log('\n📦 PASO 3: Verificando cliente y producto...');
+    
+    let cliente = await prisma.cliente.findFirst();
+    if (!cliente) {
+      cliente = await prisma.cliente.create({
+        data: {
+          nombre: 'Cliente Demo Enero SAC',
+          documento: '20987654321',
+          email: 'enero@cliente.com',
+        }
+      });
+      console.log('   ✅ Cliente creado');
+    } else {
+      console.log(`   ✅ Cliente encontrado: ${cliente.nombre}`);
+    }
+
+    let producto = await prisma.producto.findFirst();
+    if (!producto) {
+      producto = await prisma.producto.create({
+        data: {
+          nombre: 'Servicio Demo',
+          precio_material: 100,
+          precio_mano_obra: 50,
+        }
+      });
+      console.log('   ✅ Producto creado');
+    } else {
+      console.log(`   ✅ Producto encontrado: ${producto.nombre}`);
+    }
+
+    // ==================== PASO 4: CREAR COTIZACIONES ENERO 2026 ====================
+    console.log('\n📝 PASO 4: Creando cotizaciones para ENERO 2026...');
+    console.log('   (Distribuyendo 10 cotizaciones por vendedor)\n');
+
+    let totalCreadas = 0;
+    const timestamp = Date.now();
+
+    for (const vendedor of vendedores) {
+      console.log(`   📊 Creando cotizaciones para ${vendedor.nombre}...`);
+      
+      for (let i = 1; i <= 10; i++) {
+        // Distribuir fechas a lo largo de enero
+        const dia = Math.floor(Math.random() * 31) + 1;
+        const fecha = new Date(2026, 0, dia); // Enero 2026
+
+        // Distribuir estados: 40% FACTURADA, 30% APROBADA, 20% PENDIENTE, 10% RECHAZADA
+        const rand = Math.random();
+        let estado;
+        if (rand < 0.4) estado = 'FACTURADA';
+        else if (rand < 0.7) estado = 'APROBADA';
+        else if (rand < 0.9) estado = 'PENDIENTE';
+        else estado = 'RECHAZADA';
+
+        const total = Math.floor(Math.random() * 10000) + 2000;
+        const numero = `COT-ENE-${timestamp}-${vendedor.id}-${i}`;
+
+        await prisma.cotizacion.create({
+          data: {
+            numero,
+            margen: 0.3,
+            total,
+            estado,
+            createdAt: fecha,
+            clienteId: cliente.id,
+            usuarioId: vendedor.id,
+            items: {
+              create: [
+                {
+                  productoId: producto.id,
+                  cantidad: 1,
+                  precio: total,
+                  subtotal: total,
+                }
+              ]
+            }
+          }
+        });
+
+        totalCreadas++;
+      }
+      
+      console.log(`      ✅ 10 cotizaciones creadas`);
+    }
+
+    console.log(`\n   🎉 Total: ${totalCreadas} cotizaciones creadas para ENERO 2026`);
+
+    // ==================== PASO 5: RESUMEN FINAL ====================
+    console.log('\n📊 ==================== RESUMEN FINAL ====================\n');
+
+    // Contar cotizaciones por estado en ENERO 2026
+    const statsEnero = await Promise.all([
+      prisma.cotizacion.count({ 
+        where: { 
+          estado: 'PENDIENTE',
+          createdAt: { gte: primerDia, lte: ultimoDia }
+        } 
+      }),
+      prisma.cotizacion.count({ 
+        where: { 
+          estado: 'APROBADA',
+          createdAt: { gte: primerDia, lte: ultimoDia }
+        } 
+      }),
+      prisma.cotizacion.count({ 
+        where: { 
+          estado: 'RECHAZADA',
+          createdAt: { gte: primerDia, lte: ultimoDia }
+        } 
+      }),
+      prisma.cotizacion.count({ 
+        where: { 
+          estado: 'FACTURADA',
+          createdAt: { gte: primerDia, lte: ultimoDia }
+        } 
+      })
+    ]);
+
+    console.log('📅 Cotizaciones de ENERO 2026:');
+    console.log(`   PENDIENTE:  ${statsEnero[0]}`);
+    console.log(`   APROBADA:   ${statsEnero[1]}`);
+    console.log(`   RECHAZADA:  ${statsEnero[2]}`);
+    console.log(`   FACTURADA:  ${statsEnero[3]}`);
+
+    // Progreso de cada vendedor
+    console.log('\n🎯 Progreso vs Meta (ENERO 2026):');
+    console.log('─────────────────────────────────────────────────');
+    
+    for (const vendedor of vendedores) {
+      const meta = await prisma.metaMensual.findUnique({
+        where: {
+          usuarioId_mes_anio: {
+            usuarioId: vendedor.id,
+            mes,
+            anio
+          }
+        }
+      });
+
+      const facturado = await prisma.cotizacion.aggregate({
+        where: {
+          usuarioId: vendedor.id,
+          estado: 'FACTURADA',
+          createdAt: { gte: primerDia, lte: ultimoDia }
+        },
+        _sum: { total: true }
+      });
+
+      const avance = facturado._sum.total || 0;
+      const metaMonto = meta?.monto || 0;
+      const porcentaje = metaMonto > 0 ? ((avance / metaMonto) * 100).toFixed(1) : 0;
+
+      console.log(`\n${vendedor.nombre}:`);
+      console.log(`   Meta:      S/ ${metaMonto.toLocaleString('es-PE')}`);
+      console.log(`   Facturado: S/ ${avance.toLocaleString('es-PE')}`);
+      console.log(`   Progreso:  ${porcentaje}%`);
+    }
+
+    console.log('\n─────────────────────────────────────────────────');
+    console.log('✅ ¡Configuración completada exitosamente!');
+    console.log('\n💡 Ahora reinicia tu servidor y recarga el dashboard\n');
+
+  } catch (error) {
+    console.error('❌ Error:', error);
+  } finally {
+    await prisma.$disconnect();
+  }
+}
+
+setup();
