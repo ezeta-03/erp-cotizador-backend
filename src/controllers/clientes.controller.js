@@ -1,6 +1,7 @@
 const prisma = require("../config/prisma");
 const crypto = require("crypto");
 const bcrypt = require("bcryptjs");
+const { sendActivationEmail } = require("../services/mail.service");
 
 // Crear cliente
 exports.crear = async (req, res) => {
@@ -114,10 +115,7 @@ exports.invitarCliente = async (req, res) => {
     const token = crypto.randomUUID();
 
     // 🔒 Password temporal (nunca se usa)
-    const tempPassword = await bcrypt.hash(
-      crypto.randomUUID(),
-      10
-    );
+    const tempPassword = await bcrypt.hash(crypto.randomUUID(), 10);
 
     const usuario = await prisma.usuario.create({
       data: {
@@ -135,12 +133,15 @@ exports.invitarCliente = async (req, res) => {
 
     const activationLink = `http://localhost:5173/activar?token=${token}`;
 
-    console.log("🔗 LINK DE ACTIVACIÓN:");
-    console.log(activationLink);
+    await sendActivationEmail({
+      to: cliente.email,
+      name: cliente.nombre,
+      token,
+    });
 
     res.json({
       message: "Cliente invitado (simulación)",
-      activationLink,
+      // activationLink,
     });
   } catch (error) {
     console.error("❌ ERROR INVITAR CLIENTE:", error);
@@ -150,4 +151,3 @@ exports.invitarCliente = async (req, res) => {
     });
   }
 };
-
