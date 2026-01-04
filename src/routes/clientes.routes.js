@@ -35,4 +35,14 @@ router.delete(
   clientesController.eliminar
 );
 
+// Invitar cliente
+router.post(
+  "/:id/invitar",
+  // "/invitar",
+
+  auth,
+  allowRoles("ADMIN", "VENTAS"),
+  clientesController.invitarCliente
+);
+
 module.exports = router;

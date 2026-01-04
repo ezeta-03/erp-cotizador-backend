@@ -1,6 +1,7 @@
 const bcrypt = require("bcryptjs");
 const jwt = require("jsonwebtoken");
 const prisma = require("../config/prisma");
+// const bcrypt = require("bcryptjs");
 
 exports.login = async (req, res) => {
   const { email, password } = req.body;
@@ -11,6 +12,12 @@ exports.login = async (req, res) => {
 
   if (!user) {
     return res.status(401).json({ message: "Usuario no existe" });
+  }
+
+  if (!user.activo) {
+    return res.status(403).json({
+      message: "Tu cuenta aún no ha sido activada",
+    });
   }
 
   const ok = await bcrypt.compare(password, user.password);
@@ -26,4 +33,29 @@ exports.login = async (req, res) => {
   );
 
   res.json({ token });
+};
+
+// Activar cuenta
+
+exports.activarCuenta = async (req, res) => {
+  const { token, password } = req.body;
+
+  const user = await prisma.usuario.findUnique({
+    where: { activationToken: token },
+  });
+
+  if (!user) {
+    return res.status(400).json({ message: "Token inválido" });
+  }
+
+  await prisma.usuario.update({
+    where: { id: user.id },
+    data: {
+      password: await bcrypt.hash(password, 10),
+      activo: true,
+      activationToken: null,
+    },
+  });
+
+  res.json({ message: "Cuenta activada" });
 };

@@ -1,4 +1,6 @@
 const prisma = require("../config/prisma");
+const crypto = require("crypto");
+const bcrypt = require("bcryptjs");
 
 // Crear cliente
 exports.crear = async (req, res) => {
@@ -94,3 +96,58 @@ exports.eliminar = async (req, res) => {
     res.status(500).json({ message: "Error al eliminar cliente" });
   }
 };
+
+//Invitar cliente
+exports.invitarCliente = async (req, res) => {
+  try {
+    const clienteId = Number(req.params.id);
+
+    const cliente = await prisma.cliente.findUnique({
+      where: { id: clienteId },
+    });
+
+    if (!cliente || !cliente.email) {
+      return res.status(400).json({ message: "Cliente inválido" });
+    }
+
+    // 🔑 Token de activación
+    const token = crypto.randomUUID();
+
+    // 🔒 Password temporal (nunca se usa)
+    const tempPassword = await bcrypt.hash(
+      crypto.randomUUID(),
+      10
+    );
+
+    const usuario = await prisma.usuario.create({
+      data: {
+        nombre: cliente.nombre,
+        email: cliente.email,
+        password: tempPassword, // ✅ CLAVE
+        role: "CLIENTE",
+        activo: false,
+        activationToken: token,
+        cliente: {
+          connect: { id: cliente.id },
+        },
+      },
+    });
+
+    const activationLink = `http://localhost:5173/activar?token=${token}`;
+
+    console.log("🔗 LINK DE ACTIVACIÓN:");
+    console.log(activationLink);
+
+    res.json({
+      message: "Cliente invitado (simulación)",
+      activationLink,
+    });
+  } catch (error) {
+    console.error("❌ ERROR INVITAR CLIENTE:", error);
+    res.status(500).json({
+      message: "Error invitando cliente",
+      error: error.message,
+    });
+  }
+};
+
