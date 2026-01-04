@@ -25,11 +25,11 @@ model Usuario {
   id        Int      @id @default(autoincrement())
   nombre    String
   email     String   @unique
-  password  String
+  password  String?
   role      Rol
   activo    Boolean  @default(true)
   activationToken String? @unique
-  
+  activationExpires DateTime?
   clienteId Int?
   cliente   Cliente?
 

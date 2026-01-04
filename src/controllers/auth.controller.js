@@ -36,7 +36,6 @@ exports.login = async (req, res) => {
 };
 
 // Activar cuenta
-
 exports.activarCuenta = async (req, res) => {
   const { token, password } = req.body;
 
@@ -48,14 +47,43 @@ exports.activarCuenta = async (req, res) => {
     return res.status(400).json({ message: "Token inválido" });
   }
 
+  if (user.activationExpires < new Date()) {
+    return res.status(400).json({
+      message: "El link de activación ha expirado",
+    });
+  }
+
   await prisma.usuario.update({
     where: { id: user.id },
     data: {
       password: await bcrypt.hash(password, 10),
       activo: true,
       activationToken: null,
+      activationExpires: null,
     },
   });
 
   res.json({ message: "Cuenta activada" });
+};
+
+exports.cambiarPassword = async (req, res) => {
+  const { actual, nueva } = req.body;
+
+  const user = await prisma.usuario.findUnique({
+    where: { id: req.user.id },
+  });
+
+  const ok = await bcrypt.compare(actual, user.password);
+  if (!ok) {
+    return res.status(400).json({ message: "Contraseña actual incorrecta" });
+  }
+
+  await prisma.usuario.update({
+    where: { id: user.id },
+    data: {
+      password: await bcrypt.hash(nueva, 10),
+    },
+  });
+
+  res.json({ message: "Contraseña actualizada" });
 };

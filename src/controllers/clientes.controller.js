@@ -102,47 +102,66 @@ exports.eliminar = async (req, res) => {
 exports.invitarCliente = async (req, res) => {
   try {
     const clienteId = Number(req.params.id);
+    const { email } = req.body;
 
     const cliente = await prisma.cliente.findUnique({
       where: { id: clienteId },
     });
 
-    if (!cliente || !cliente.email) {
+    if (!cliente) {
       return res.status(400).json({ message: "Cliente inválido" });
     }
 
-    // 🔑 Token de activación
-    const token = crypto.randomUUID();
-
-    // 🔒 Password temporal (nunca se usa)
-    const tempPassword = await bcrypt.hash(crypto.randomUUID(), 10);
-
-    const usuario = await prisma.usuario.create({
-      data: {
-        nombre: cliente.nombre,
-        email: cliente.email,
-        password: tempPassword, // ✅ CLAVE
-        role: "CLIENTE",
-        activo: false,
-        activationToken: token,
-        cliente: {
-          connect: { id: cliente.id },
-        },
-      },
+    const usuario = await prisma.usuario.findUnique({
+      where: { email },
     });
 
-    const activationLink = `http://localhost:5173/activar?token=${token}`;
+    const token = crypto.randomUUID();
+    const expires = new Date();
+    expires.setHours(expires.getHours() + 24);
+
+    if (usuario) {
+      if (usuario.activo) {
+        return res.status(400).json({
+          message: "El usuario ya tiene una cuenta activa",
+        });
+      }
+
+      // 🔁 Reinvitar
+      await prisma.usuario.update({
+        where: { id: usuario.id },
+        data: {
+          activationToken: token,
+          activationExpires: expires,
+          cliente: {
+            connect: { id: cliente.id },
+          },
+        },
+      });
+    } else {
+      // 🆕 Nuevo usuario
+      await prisma.usuario.create({
+        data: {
+          nombre: cliente.nombre,
+          email,
+          role: "CLIENTE",
+          activo: false,
+          activationToken: token,
+          activationExpires: expires,
+          cliente: {
+            connect: { id: cliente.id },
+          },
+        },
+      });
+    }
 
     await sendActivationEmail({
-      to: cliente.email,
+      to: email,
       name: cliente.nombre,
       token,
     });
 
-    res.json({
-      message: "Cliente invitado (simulación)",
-      // activationLink,
-    });
+    res.json({ message: "Invitación enviada correctamente" });
   } catch (error) {
     console.error("❌ ERROR INVITAR CLIENTE:", error);
     res.status(500).json({
