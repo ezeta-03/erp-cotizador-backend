@@ -10,7 +10,7 @@ exports.crear = async (req, res) => {
 
     const cliente = await prisma.cliente.create({
       data: {
-        nombre: req.body.nombre,
+        nombreComercial: req.body.nombreComercial,
         documento: req.body.documento,
         telefono: req.body.telefono,
         email: req.body.email,
@@ -60,12 +60,12 @@ exports.actualizar = async (req, res) => {
     }
 
     // Solo actualizar campos permitidos
-    const { nombre, documento, telefono, email, direccion } = req.body;
+    const { nombreComercial, documento, telefono, email, direccion } = req.body;
 
     const cliente = await prisma.cliente.update({
       where: { id: clienteId },
       data: {
-        ...(nombre !== undefined && { nombre }),
+        ...(nombreComercial !== undefined && { nombreComercial }),
         ...(documento !== undefined && { documento }),
         ...(telefono !== undefined && { telefono }),
         ...(email !== undefined && { email }),
@@ -142,7 +142,7 @@ exports.invitarCliente = async (req, res) => {
       // 🆕 Nuevo usuario
       await prisma.usuario.create({
         data: {
-          nombre: cliente.nombre,
+          nombreComercial: cliente.nombreComercial,
           email,
           role: "CLIENTE",
           activo: false,
