@@ -54,13 +54,32 @@ model Cliente {
 }
 
 model Producto {
-  id                Int      @id @default(autoincrement())
-  nombre            String
-  precio_material   Float
-  precio_mano_obra  Float
-  createdAt         DateTime @default(now())
-
+  id                    Int      @id @default(autoincrement())
+  
+  // Columnas del Excel
+  categoria             String              // A: Categoría
+  servicio              String              // B: Servicio
+  material              String?             // C: Material
+  unidad                String?             // D: Unidad
+  costo_material        Float               // E: Costo Material [S/.]
+  costo_parcial_1       Float               // F: Costo Parcial 1 = F * 1.10
+  costo_parcial_2       Float               // G: Costo Parcial 2 = G * 1.17
+  precio_final          Float               // H: Precio Final Unitario = H * 1.20
+  margen                Float               // I: Margen = I * 0.20
+  
+  // Campos de control
+  activo                Boolean  @default(true)
+  
+  // COMPATIBILIDAD con código anterior
+  nombre                String?              // Alias de 'servicio'
+  
+  createdAt             DateTime @default(now())
+  updatedAt             DateTime @updatedAt
+  
   items CotizacionItem[]
+  
+  @@index([categoria])
+  @@index([servicio])
 }
 
 model Cotizacion {
@@ -97,8 +116,8 @@ model MetaMensual {
   id        Int      @id @default(autoincrement())
   usuarioId Int
   monto     Float
-  mes       Int      // 1-12
-  anio      Int      // 2025, 2026...
+  mes       Int
+  anio      Int
   
   usuario   Usuario  @relation(fields: [usuarioId], references: [id])
   
