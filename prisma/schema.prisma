@@ -94,7 +94,6 @@ model Producto {
 model Cotizacion {
   id        Int      @id @default(autoincrement())
   numero    String   @unique
-  margen    Float
   total     Float
   estado    EstadoCotizacion @default(PENDIENTE)
   

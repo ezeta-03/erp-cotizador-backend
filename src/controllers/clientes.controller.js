@@ -183,7 +183,7 @@ exports.actividadClientes = async (req, res) => {
     // 🔍 Filtro por nombre de cliente
     if (cliente) {
       where.cliente = {
-        nombre: {
+        nombreComercial: {
           contains: cliente,
         },
       };
