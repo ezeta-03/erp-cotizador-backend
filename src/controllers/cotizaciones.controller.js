@@ -123,14 +123,14 @@ exports.ultimaCotizacionCliente = async (req, res) => {
 };
 
 /* =========================
-   CLIENTE: RESPONDER
+   CLIENTE: RESPONDER COTIZACIÓN
 ========================= */
 exports.responderCotizacion = async (req, res) => {
   try {
     const { id } = req.params;
     const { estado, comentario } = req.body;
 
-    if (!["ACEPTADA", "RECHAZADA"].includes(estado)) {
+    if (!["APROBADA", "RECHAZADA"].includes(estado)) {
       return res.status(400).json({ message: "Estado inválido" });
     }
 
@@ -139,12 +139,22 @@ exports.responderCotizacion = async (req, res) => {
       include: { cliente: true },
     });
 
-    if (!cotizacion || cotizacion.cliente.usuarioId !== req.user.id) {
+    if (!cotizacion) {
+      return res.status(404).json({ message: "Cotización no encontrada" });
+    }
+
+    // Solo el cliente dueño puede responder
+    const usuario = await prisma.usuario.findUnique({
+      where: { id: req.user.id },
+      include: { cliente: true },
+    });
+
+    if (!usuario?.cliente || usuario.cliente.id !== cotizacion.clienteId) {
       return res.status(403).json({ message: "No autorizado" });
     }
 
     if (cotizacion.estado !== "PENDIENTE") {
-      return res.status(400).json({ message: "Ya fue respondida" });
+      return res.status(400).json({ message: "La cotización ya fue respondida" });
     }
 
     const updated = await prisma.cotizacion.update({
@@ -158,9 +168,46 @@ exports.responderCotizacion = async (req, res) => {
 
     res.json(updated);
   } catch (error) {
+    console.error("❌ Error respondiendo cotización:", error);
     res.status(500).json({ message: "Error respondiendo cotización" });
   }
 };
+
+
+/* =========================
+   VENTAS/ADMIN: FACTURAR COTIZACIÓN
+========================= */
+exports.facturarCotizacion = async (req, res) => {
+  try {
+    const { id } = req.params;
+
+    const cotizacion = await prisma.cotizacion.findUnique({
+      where: { id: Number(id) },
+    });
+
+    if (!cotizacion) {
+      return res.status(404).json({ message: "Cotización no encontrada" });
+    }
+
+    if (cotizacion.estado !== "APROBADA") {
+      return res.status(400).json({ message: "Solo se pueden facturar cotizaciones aprobadas" });
+    }
+
+    const updated = await prisma.cotizacion.update({
+      where: { id: Number(id) },
+      data: {
+        estado: "FACTURADA",
+        facturadaAt: new Date(),
+      },
+    });
+
+    res.json(updated);
+  } catch (error) {
+    console.error("❌ Error facturando cotización:", error);
+    res.status(500).json({ message: "Error facturando cotización" });
+  }
+};
+
 
 /* =========================
    PDF

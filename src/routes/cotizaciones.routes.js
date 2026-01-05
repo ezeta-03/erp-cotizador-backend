@@ -43,6 +43,13 @@ router.post(
   controller.responderCotizacion // 🔴 ESTE ERA EL PROBLEMA
 );
 
+// VENTAS/ADMIN: facturar cotización aprobada
+router.post(
+  "/:id/facturar",
+  auth,
+  allowRoles("ADMIN", "VENTAS"),
+  controller.facturarCotizacion
+);
 // Descargar PDF
 router.get("/:id/pdf", auth, controller.generarPdf);
 
