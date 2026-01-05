@@ -21,6 +21,14 @@ enum EstadoCotizacion {
   FACTURADA
 }
 
+model Configuracion {
+  id                        Int      @id @default(autoincrement())
+  costo_indirecto           Float    @default(0.10)   // +10%
+  porcentaje_administrativo Float    @default(0.17)   // +17%
+  rentabilidad              Float    @default(0.30)   // +30%
+  updatedAt                 DateTime @updatedAt
+}
+
 model Usuario {
   id        Int      @id @default(autoincrement())
   nombre    String
