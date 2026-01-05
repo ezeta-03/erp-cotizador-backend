@@ -216,7 +216,7 @@ exports.actividadClientes = async (req, res) => {
     const filtradas = producto
       ? cotizaciones.filter((c) =>
           c.items.some((i) =>
-            i.producto.nombre
+            i.producto.material
               .toLowerCase()
               .includes(producto.toLowerCase())
           )

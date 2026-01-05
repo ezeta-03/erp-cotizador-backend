@@ -5,9 +5,10 @@ const cotizacionTemplate = require("../templates/cotizacionPdf.template");
 /* =========================
    CREAR COTIZACIÓN
 ========================= */
+
 exports.crearCotizacion = async (req, res) => {
   try {
-    const { numero, clienteId, margen, items } = req.body;
+    const { numero, clienteId, items } = req.body;
 
     if (!items || items.length === 0) {
       return res.status(400).json({ message: "Debe agregar productos" });
@@ -39,16 +40,15 @@ exports.crearCotizacion = async (req, res) => {
       });
     }
 
-    const total = subtotal + subtotal * (Number(margen) / 100);
+    const total = subtotal; // ✅ ya no se aplica margen
 
     const cotizacion = await prisma.cotizacion.create({
       data: {
         numero,
         clienteId: cliente.id,
         usuarioId: req.user.id,
-        margen: Number(margen),
         total,
-        // estado = PENDIENTE por default
+        estado: "PENDIENTE", // default
         items: {
           create: itemsData,
         },

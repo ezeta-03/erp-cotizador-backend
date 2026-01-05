@@ -94,7 +94,6 @@ module.exports = (cotizacion) => {
   <div class="logo">
     <img src="file:///${process.cwd()}/public/favicon.png" />
     <img src="http://localhost:4000/favicon.png" />
-
   </div>
   <div class="company">
     <strong>ZAAZMAGO</strong><br/>
@@ -106,7 +105,7 @@ module.exports = (cotizacion) => {
 <h1>Cotización ${numero}</h1>
 
 <div class="info">
-  <p><strong>Cliente:</strong> ${cliente.nombre}</p>
+  <p><strong>Cliente:</strong> ${cliente.nombreComercial}</p>
   <p><strong>Fecha:</strong> ${new Date(createdAt).toLocaleDateString()}</p>
 </div>
 
@@ -126,7 +125,7 @@ ${items
     (item, i) => `
 <tr>
   <td>${i + 1}</td>
-  <td>${item.producto.nombre}</td>
+  <td>${item.producto.material}</td>
   <td>${item.cantidad}</td>
   <td>${item.precio.toFixed(2)}</td>
   <td>${item.subtotal.toFixed(2)}</td>
