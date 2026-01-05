@@ -45,4 +45,12 @@ router.post(
   clientesController.invitarCliente
 );
 
+// Análisis clientes + cotizaciones
+router.get(
+  "/actividad",
+  auth,
+  allowRoles("ADMIN", "VENTAS"),
+  clientesController.actividadClientes
+);
+
 module.exports = router;

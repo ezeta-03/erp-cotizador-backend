@@ -170,3 +170,64 @@ exports.invitarCliente = async (req, res) => {
     });
   }
 };
+
+// ===============================
+// 📊 Actividad de clientes (análisis)
+// ===============================
+exports.actividadClientes = async (req, res) => {
+  try {
+    const { cliente, producto, desde, hasta } = req.query;
+
+    const where = {};
+
+    // 🔍 Filtro por nombre de cliente
+    if (cliente) {
+      where.cliente = {
+        nombre: {
+          contains: cliente,
+        },
+      };
+    }
+
+    // 📅 Filtro por fechas
+    if (desde || hasta) {
+      where.createdAt = {};
+      if (desde) where.createdAt.gte = new Date(desde);
+      if (hasta) where.createdAt.lte = new Date(hasta);
+    }
+
+    // 🧱 Query principal
+    const cotizaciones = await prisma.cotizacion.findMany({
+      where,
+      include: {
+        cliente: true,
+        items: {
+          include: {
+            producto: true,
+          },
+        },
+      },
+      orderBy: {
+        createdAt: "desc",
+      },
+    });
+
+    // 🧠 Filtro por producto (post-query, más flexible)
+    const filtradas = producto
+      ? cotizaciones.filter((c) =>
+          c.items.some((i) =>
+            i.producto.nombre
+              .toLowerCase()
+              .includes(producto.toLowerCase())
+          )
+        )
+      : cotizaciones;
+
+    res.json(filtradas);
+  } catch (error) {
+    console.error("❌ ERROR ACTIVIDAD CLIENTES:", error);
+    res.status(500).json({
+      message: "Error obteniendo actividad de clientes",
+    });
+  }
+};
