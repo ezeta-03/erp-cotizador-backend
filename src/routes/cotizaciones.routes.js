@@ -40,7 +40,7 @@ router.post(
   "/:id/responder",
   auth,
   allowRoles("CLIENTE"),
-  controller.responderCotizacion // 🔴 ESTE ERA EL PROBLEMA
+  controller.responderCotizacion
 );
 
 // VENTAS/ADMIN: facturar cotización aprobada

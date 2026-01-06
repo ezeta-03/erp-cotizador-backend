@@ -179,7 +179,7 @@ exports.reinvitar = async (req, res) => {
     // Enviar correo
     await sendActivationEmail({
       to: email,
-      name: usuario.nombre,
+      name: usuario.nombreComercial,
       token,
     });
 

@@ -136,20 +136,17 @@ exports.responderCotizacion = async (req, res) => {
 
     const cotizacion = await prisma.cotizacion.findUnique({
       where: { id: Number(id) },
-      include: { cliente: true },
     });
 
     if (!cotizacion) {
       return res.status(404).json({ message: "Cotización no encontrada" });
     }
 
-    // Solo el cliente dueño puede responder
     const usuario = await prisma.usuario.findUnique({
       where: { id: req.user.id },
-      include: { cliente: true },
     });
 
-    if (!usuario?.cliente || usuario.cliente.id !== cotizacion.clienteId) {
+    if (!usuario?.clienteId || usuario.clienteId !== cotizacion.clienteId) {
       return res.status(403).json({ message: "No autorizado" });
     }
 
@@ -169,7 +166,7 @@ exports.responderCotizacion = async (req, res) => {
     res.json(updated);
   } catch (error) {
     console.error("❌ Error respondiendo cotización:", error);
-    res.status(500).json({ message: "Error respondiendo cotización" });
+    res.status(500).json({ message: "Error respondiendo cotización", error: error.message });
   }
 };
 

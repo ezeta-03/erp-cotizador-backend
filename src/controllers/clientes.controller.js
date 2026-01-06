@@ -12,6 +12,7 @@ exports.crear = async (req, res) => {
       data: {
         nombreComercial: req.body.nombreComercial,
         documento: req.body.documento,
+        nombreContacto: req.body.nombreContacto,
         telefono: req.body.telefono,
         email: req.body.email,
         direccion: req.body.direccion,
@@ -60,13 +61,14 @@ exports.actualizar = async (req, res) => {
     }
 
     // Solo actualizar campos permitidos
-    const { nombreComercial, documento, telefono, email, direccion } = req.body;
+    const { nombreComercial, documento, telefono, nombreContacto, email, direccion } = req.body;
 
     const cliente = await prisma.cliente.update({
       where: { id: clienteId },
       data: {
         ...(nombreComercial !== undefined && { nombreComercial }),
         ...(documento !== undefined && { documento }),
+        ...(nombreContacto !== undefined && { nombreContacto }),
         ...(telefono !== undefined && { telefono }),
         ...(email !== undefined && { email }),
         ...(direccion !== undefined && { direccion }),
@@ -104,17 +106,12 @@ exports.invitarCliente = async (req, res) => {
     const clienteId = Number(req.params.id);
     const { email } = req.body;
 
-    const cliente = await prisma.cliente.findUnique({
-      where: { id: clienteId },
-    });
-
+    const cliente = await prisma.cliente.findUnique({ where: { id: clienteId } });
     if (!cliente) {
       return res.status(400).json({ message: "Cliente inválido" });
     }
 
-    const usuario = await prisma.usuario.findUnique({
-      where: { email },
-    });
+    const usuario = await prisma.usuario.findUnique({ where: { email } });
 
     const token = crypto.randomUUID();
     const expires = new Date();
@@ -122,54 +119,46 @@ exports.invitarCliente = async (req, res) => {
 
     if (usuario) {
       if (usuario.activo) {
-        return res.status(400).json({
-          message: "El usuario ya tiene una cuenta activa",
-        });
+        return res.status(400).json({ message: "El usuario ya tiene una cuenta activa" });
       }
 
-      // 🔁 Reinvitar
+      // Reinvitar
       await prisma.usuario.update({
         where: { id: usuario.id },
         data: {
           activationToken: token,
           activationExpires: expires,
-          cliente: {
-            connect: { id: cliente.id },
-          },
+          cliente: { connect: { id: cliente.id } },
         },
       });
     } else {
-      // 🆕 Nuevo usuario
+      // Nuevo usuario
       await prisma.usuario.create({
         data: {
-          nombreComercial: cliente.nombreComercial,
+          nombre: cliente.nombreComercial,   // 👈 corregido
           email,
           role: "CLIENTE",
           activo: false,
           activationToken: token,
           activationExpires: expires,
-          cliente: {
-            connect: { id: cliente.id },
-          },
+          cliente: { connect: { id: cliente.id } },
         },
       });
     }
 
     await sendActivationEmail({
       to: email,
-      name: cliente.nombre,
+      name: cliente.nombreComercial,        // 👈 corregido
       token,
     });
 
     res.json({ message: "Invitación enviada correctamente" });
   } catch (error) {
     console.error("❌ ERROR INVITAR CLIENTE:", error);
-    res.status(500).json({
-      message: "Error invitando cliente",
-      error: error.message,
-    });
+    res.status(500).json({ message: "Error invitando cliente", error: error.message });
   }
 };
+
 
 // ===============================
 // 📊 Actividad de clientes (análisis)
