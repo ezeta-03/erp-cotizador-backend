@@ -4,7 +4,11 @@
   "main": "index.js",
   "scripts": {
     "test": "echo \"Error: no test specified\" && exit 1",
-    "dev": "nodemon src/server.js"
+    "dev": "nodemon src/server.js",
+    "seed:parte1": "node prisma/seed-parte1.js",
+    "seed:parte2": "node prisma/seed-parte2.js",
+    "seed:parte3": "node prisma/seed-parte3.js",
+    "seed:all": "npm run seed:parte1 && npm run seed:parte2 && npm run seed:parte3"
   },
   "prisma": {
     "seed": "node prisma/seed.js"

@@ -1,14 +1,17 @@
 const prisma = require("../config/prisma");
 const puppeteer = require("puppeteer");
+const { calcularPrecioAdicional } = require("../utils/precios");
 const cotizacionTemplate = require("../templates/cotizacionPdf.template");
+const { generarGlosa } = require("../utils/glosa");
+
 
 /* =========================
    CREAR COTIZACIÓN
 ========================= */
-
 exports.crearCotizacion = async (req, res) => {
   try {
     const { numero, clienteId, items } = req.body;
+    const config = await prisma.configuracion.findFirst();
 
     if (!items || items.length === 0) {
       return res.status(400).json({ message: "Debe agregar productos" });
@@ -17,46 +20,81 @@ exports.crearCotizacion = async (req, res) => {
     const cliente = await prisma.cliente.findUnique({
       where: { id: Number(clienteId) },
     });
+    if (!cliente) return res.status(400).json({ message: "Cliente no existe" });
 
-    if (!cliente) {
-      return res.status(400).json({ message: "Cliente no existe" });
-    }
-
-    let subtotal = 0;
+    let totalCotizacion = 0;
     const itemsData = [];
 
     for (const item of items) {
       const cantidad = Number(item.cantidad);
-      const precio = Number(item.precio);
-      const sub = cantidad * precio;
+      const precioBase = Number(item.precio);
+      let subtotal = cantidad * precioBase;
 
-      subtotal += sub;
+      // Construimos la glosa base
+      let descripcion = item.material;
 
-      itemsData.push({
+      const detalle = {
         productoId: Number(item.productoId),
         cantidad,
-        precio,
-        subtotal: sub,
-      });
-    }
+        precio: precioBase,
+        subtotal,
+        descripcion, // 👈 guardamos la glosa aquí
+      };
 
-    const total = subtotal; // ✅ ya no se aplica margen
+      if (item.adicionales && item.adicionales.length > 0) {
+        detalle.adicionales = {
+          create: await Promise.all(
+            item.adicionales.map(async (adicionalSeleccionado) => {
+              const adicional = await prisma.productoAdicional.findUnique({
+                where: { id: adicionalSeleccionado.id },
+              });
+
+              const precioFinalAdicional = calcularPrecioAdicional(
+                adicional.precio,
+                config
+              );
+
+              if (adicionalSeleccionado.seleccionado) {
+                subtotal += precioFinalAdicional * cantidad;
+                // Concatenamos a la glosa
+                descripcion += ` con ${adicional.nombre}`;
+              }
+
+              return {
+                adicionalId: adicional.id,
+                seleccionado: adicionalSeleccionado.seleccionado,
+                precio: adicionalSeleccionado.seleccionado
+                  ? precioFinalAdicional
+                  : 0,
+              };
+            })
+          ),
+        };
+
+        detalle.subtotal = subtotal;
+        detalle.descripcion = descripcion; // 👈 actualizamos glosa final
+      }
+
+      totalCotizacion += subtotal;
+      itemsData.push(detalle);
+    }
 
     const cotizacion = await prisma.cotizacion.create({
       data: {
         numero,
         clienteId: cliente.id,
         usuarioId: req.user.id,
-        total,
-        estado: "PENDIENTE", // default
-        items: {
-          create: itemsData,
-        },
+        total: totalCotizacion,
+        estado: "PENDIENTE",
+        items: { create: itemsData },
       },
       include: {
         cliente: true,
         items: {
-          include: { producto: true },
+          include: {
+            producto: true,
+            adicionales: { include: { adicional: true } },
+          },
         },
       },
     });
@@ -73,18 +111,28 @@ exports.crearCotizacion = async (req, res) => {
 ========================= */
 exports.listarCotizaciones = async (req, res) => {
   try {
-    const where =
-      req.user.role === "VENTAS"
-        ? { usuarioId: req.user.id }
-        : {};
-
+    const where = req.user.role === "VENTAS" ? { usuarioId: req.user.id } : {};
     const cotizaciones = await prisma.cotizacion.findMany({
       where,
-      include: { cliente: true },
+      include: {
+        cliente: true,
+        items: {
+          include: {
+            producto: true,
+            adicionales: { include: { adicional: true } },
+          },
+        },
+      },
       orderBy: { createdAt: "desc" },
     });
-
-    res.json(cotizaciones);
+    const cotizacionesConGlosa = cotizaciones.map((c) => ({
+      ...c,
+      items: c.items.map((item) => ({
+        ...item,
+        glosa: generarGlosa(item.producto, item.adicionales),
+      })),
+    }));
+    res.json(cotizacionesConGlosa);
   } catch (error) {
     res.status(500).json({ message: "Error al listar cotizaciones" });
   }
@@ -151,7 +199,9 @@ exports.responderCotizacion = async (req, res) => {
     }
 
     if (cotizacion.estado !== "PENDIENTE") {
-      return res.status(400).json({ message: "La cotización ya fue respondida" });
+      return res
+        .status(400)
+        .json({ message: "La cotización ya fue respondida" });
     }
 
     const updated = await prisma.cotizacion.update({
@@ -166,10 +216,11 @@ exports.responderCotizacion = async (req, res) => {
     res.json(updated);
   } catch (error) {
     console.error("❌ Error respondiendo cotización:", error);
-    res.status(500).json({ message: "Error respondiendo cotización", error: error.message });
+    res
+      .status(500)
+      .json({ message: "Error respondiendo cotización", error: error.message });
   }
 };
-
 
 /* =========================
    VENTAS/ADMIN: FACTURAR COTIZACIÓN
@@ -187,7 +238,9 @@ exports.facturarCotizacion = async (req, res) => {
     }
 
     if (cotizacion.estado !== "APROBADA") {
-      return res.status(400).json({ message: "Solo se pueden facturar cotizaciones aprobadas" });
+      return res
+        .status(400)
+        .json({ message: "Solo se pueden facturar cotizaciones aprobadas" });
     }
 
     const updated = await prisma.cotizacion.update({
@@ -205,7 +258,6 @@ exports.facturarCotizacion = async (req, res) => {
   }
 };
 
-
 /* =========================
    PDF
 ========================= */
@@ -222,10 +274,7 @@ exports.generarPdf = async (req, res) => {
     if (!cotizacion) return res.sendStatus(404);
 
     // Seguridad
-    if (
-      req.user.role === "VENTAS" &&
-      cotizacion.usuarioId !== req.user.id
-    ) {
+    if (req.user.role === "VENTAS" && cotizacion.usuarioId !== req.user.id) {
       return res.sendStatus(403);
     }
 

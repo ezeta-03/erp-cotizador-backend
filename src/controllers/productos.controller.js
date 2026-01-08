@@ -59,7 +59,10 @@ exports.listar = async (req, res) => {
     
     const productos = await prisma.producto.findMany({
       where,
-      orderBy: { id: "asc" }
+      orderBy: { id: "asc" },
+      include: {
+        adicionales: true, // 👈 ahora sí trae los adicionales
+      },
     });
     
     res.json(productos);
@@ -68,6 +71,8 @@ exports.listar = async (req, res) => {
     res.status(500).json({ message: "Error al listar productos" });
   }
 };
+
+
 
 // Actualizar producto
 exports.actualizar = async (req, res) => {
