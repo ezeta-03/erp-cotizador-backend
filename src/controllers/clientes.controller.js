@@ -106,49 +106,60 @@ exports.invitarCliente = async (req, res) => {
     const clienteId = Number(req.params.id);
     const { email } = req.body;
 
+    // Verificar cliente
     const cliente = await prisma.cliente.findUnique({ where: { id: clienteId } });
     if (!cliente) {
       return res.status(400).json({ message: "Cliente inválido" });
     }
 
-    const usuario = await prisma.usuario.findUnique({ where: { email } });
+    // Verificar usuario existente
+    const usuarioExistente = await prisma.usuario.findUnique({ where: { email } });
 
     const token = crypto.randomUUID();
     const expires = new Date();
     expires.setHours(expires.getHours() + 24);
 
-    if (usuario) {
-      if (usuario.activo) {
+    let usuarioFinal;
+
+    if (usuarioExistente) {
+      if (usuarioExistente.activo) {
         return res.status(400).json({ message: "El usuario ya tiene una cuenta activa" });
       }
 
-      // Reinvitar
-      await prisma.usuario.update({
-        where: { id: usuario.id },
+      // Reinvitar usuario inactivo
+      usuarioFinal = await prisma.usuario.update({
+        where: { id: usuarioExistente.id },
         data: {
           activationToken: token,
           activationExpires: expires,
-          cliente: { connect: { id: cliente.id } },
         },
       });
     } else {
-      // Nuevo usuario
-      await prisma.usuario.create({
+      // Crear nuevo usuario
+      usuarioFinal = await prisma.usuario.create({
         data: {
-          nombre: cliente.nombreComercial,   // 👈 corregido
+          nombre: cliente.nombreComercial,
           email,
           role: "CLIENTE",
           activo: false,
           activationToken: token,
           activationExpires: expires,
-          cliente: { connect: { id: cliente.id } },
         },
       });
     }
 
+    // Vincular cliente con usuario (llena usuarioId en Cliente)
+    await prisma.cliente.update({
+      where: { id: cliente.id },
+      data: {
+        usuario: { connect: { id: usuarioFinal.id } },
+      },
+    });
+
+    // Enviar correo de activación
     await sendActivationEmail({
       to: email,
-      name: cliente.nombreComercial,        // 👈 corregido
+      name: cliente.nombreComercial,
       token,
     });
 
@@ -158,6 +169,8 @@ exports.invitarCliente = async (req, res) => {
     res.status(500).json({ message: "Error invitando cliente", error: error.message });
   }
 };
+
+
 
 
 // ===============================
