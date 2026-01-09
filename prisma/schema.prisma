@@ -106,9 +106,9 @@ model Cotizacion {
   numero String           @unique
   total  Float
   estado EstadoCotizacion @default(PENDIENTE)
-
   createdAt DateTime @default(now())
-
+  respuestaComentario String? 
+  respondidaAt        DateTime?
   clienteId Int
   usuarioId Int
 

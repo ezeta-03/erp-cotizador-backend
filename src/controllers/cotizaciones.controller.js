@@ -4,7 +4,6 @@ const { calcularPrecioAdicional } = require("../utils/precios");
 const cotizacionTemplate = require("../templates/cotizacionPdf.template");
 const { generarGlosa } = require("../utils/glosa");
 
-
 /* =========================
    CREAR COTIZACIÓN
 ========================= */
@@ -190,11 +189,13 @@ exports.responderCotizacion = async (req, res) => {
       return res.status(404).json({ message: "Cotización no encontrada" });
     }
 
-    const usuario = await prisma.usuario.findUnique({
-      where: { id: req.user.id },
+    // Buscar el cliente vinculado a la cotización
+    const cliente = await prisma.cliente.findUnique({
+      where: { id: cotizacion.clienteId },
     });
 
-    if (!usuario?.clienteId || usuario.clienteId !== cotizacion.clienteId) {
+    // Validar que el usuario autenticado es el dueño de ese cliente
+    if (!cliente || cliente.usuarioId !== req.user.id) {
       return res.status(403).json({ message: "No autorizado" });
     }
 
