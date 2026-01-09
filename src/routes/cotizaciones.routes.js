@@ -50,6 +50,7 @@ router.post(
   allowRoles("ADMIN", "VENTAS"),
   controller.facturarCotizacion
 );
+
 // Descargar PDF
 router.get("/:id/pdf", auth, controller.generarPdf);
 

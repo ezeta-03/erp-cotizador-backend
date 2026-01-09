@@ -226,22 +226,25 @@ exports.responderCotizacion = async (req, res) => {
 /* =========================
    VENTAS/ADMIN: FACTURAR COTIZACIÓN
 ========================= */
+
 exports.facturarCotizacion = async (req, res) => {
   try {
     const { id } = req.params;
 
-    const cotizacion = await prisma.cotizacion.findUnique({
-      where: { id: Number(id) },
-    });
+    const cotizacion = await prisma.cotizacion.findUnique({ where: { id: Number(id) } });
 
     if (!cotizacion) {
       return res.status(404).json({ message: "Cotización no encontrada" });
     }
 
     if (cotizacion.estado !== "APROBADA") {
-      return res
-        .status(400)
-        .json({ message: "Solo se pueden facturar cotizaciones aprobadas" });
+      return res.status(400).json({ message: "Solo se puede facturar una cotización aprobada" });
+    }
+
+    // Validar rol
+    const usuario = await prisma.usuario.findUnique({ where: { id: req.user.id } });
+    if (usuario?.role !== "VENTAS" && usuario?.role !== "ADMIN") {
+      return res.status(403).json({ message: "No autorizado para facturar" });
     }
 
     const updated = await prisma.cotizacion.update({
@@ -255,9 +258,13 @@ exports.facturarCotizacion = async (req, res) => {
     res.json(updated);
   } catch (error) {
     console.error("❌ Error facturando cotización:", error);
-    res.status(500).json({ message: "Error facturando cotización" });
+    res.status(500).json({ message: "Error facturando cotización", error: error.message });
   }
 };
+
+
+
+
 
 /* =========================
    PDF
