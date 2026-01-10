@@ -115,6 +115,7 @@ exports.listarCotizaciones = async (req, res) => {
       where,
       include: {
         cliente: true,
+        usuario: { select: { id: true, nombre: true, email: true, role: true } },
         items: {
           include: {
             producto: true,

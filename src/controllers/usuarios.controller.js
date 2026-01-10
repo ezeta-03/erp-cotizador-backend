@@ -6,39 +6,55 @@ const { sendActivationEmail } = require("../services/mail.service");
 // Crear usuario
 exports.crear = async (req, res) => {
   try {
-    const { nombre, nombreComercial, email, password, role, clienteId } =
-      req.body;
+    const { nombre, nombreComercial, email, password, role, clienteId } = req.body;
 
-    const hash = password ? await bcrypt.hash(password, 10) : null;
+    // Validar password
+    if (!password) {
+      return res.status(400).json({ message: "La contraseña es obligatoria" });
+    }
+
+    const hash = await bcrypt.hash(password, 10);
+
+    const data = {
+      nombre,
+      email,
+      password: hash,
+      role,
+      activo: true,
+    };
+
+    // Si es CLIENTE, asociar relación y nombreComercial
+    if (role === "CLIENTE") {
+      if (!clienteId) {
+        return res.status(400).json({ message: "Debe indicar clienteId para rol CLIENTE" });
+      }
+      data.cliente = { connect: { id: Number(clienteId) } };
+      if (nombreComercial) {
+        data.nombreComercial = nombreComercial;
+      }
+    }
 
     const usuario = await prisma.usuario.create({
-      data: {
-        nombre,
-        nombreComercial: role === "CLIENTE" ? nombreComercial : null,
-        email,
-        password: hash,
-        role,
-        clienteId: role === "CLIENTE" ? clienteId : null,
-        activo: true,
-      },
+      data,
       select: {
         id: true,
         nombre: true,
         nombreComercial: true,
         email: true,
         role: true,
-        clienteId: true,
         activo: true,
         createdAt: true,
+        cliente: { select: { id: true, nombreComercial: true } },
       },
     });
 
     res.json(usuario);
   } catch (error) {
-    console.error("❌ Error creando usuario:", error);
-    res.status(500).json({ message: "Error al crear usuario", error });
+    console.error("❌ Error creando usuario:", error.message, error.stack);
+    res.status(500).json({ message: "Error al crear usuario", error: error.message });
   }
 };
+
 
 // Listar usuarios (todos)
 exports.listar = async (req, res) => {
