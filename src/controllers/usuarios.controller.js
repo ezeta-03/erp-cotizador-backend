@@ -6,22 +6,25 @@ const { sendActivationEmail } = require("../services/mail.service");
 // Crear usuario
 exports.crear = async (req, res) => {
   try {
-    const { nombre, email, password, role, clienteId } = req.body;
+    const { nombre, nombreComercial, email, password, role, clienteId } =
+      req.body;
 
-    const hash = await bcrypt.hash(password, 10);
+    const hash = password ? await bcrypt.hash(password, 10) : null;
 
     const usuario = await prisma.usuario.create({
       data: {
         nombre,
+        nombreComercial: role === "CLIENTE" ? nombreComercial : null,
         email,
         password: hash,
         role,
         clienteId: role === "CLIENTE" ? clienteId : null,
-        activo: true, // por defecto activo
+        activo: true,
       },
       select: {
         id: true,
         nombre: true,
+        nombreComercial: true,
         email: true,
         role: true,
         clienteId: true,
@@ -45,18 +48,20 @@ exports.listar = async (req, res) => {
       select: {
         id: true,
         nombre: true,
+        nombreComercial: true,
         email: true,
         role: true,
-        clienteId: true,
         activo: true,
         createdAt: true,
+        cliente: { select: { id: true, nombreComercial: true } },
       },
     });
-
     res.json(usuarios);
   } catch (error) {
-    console.error("❌ Error listando usuarios:", error);
-    res.status(500).json({ message: "Error al listar usuarios", error });
+    console.error("❌ Error listando usuarios:", error.message, error.stack);
+    res
+      .status(500)
+      .json({ message: "Error al listar usuarios", error: error.message });
   }
 };
 
@@ -125,7 +130,9 @@ exports.cambiarEstado = async (req, res) => {
     const { activo } = req.body; // true o false
 
     if (typeof activo === "undefined") {
-      return res.status(400).json({ message: "Debe indicar el estado (activo)" });
+      return res
+        .status(400)
+        .json({ message: "Debe indicar el estado (activo)" });
     }
 
     const usuario = await prisma.usuario.update({
@@ -134,18 +141,21 @@ exports.cambiarEstado = async (req, res) => {
       select: {
         id: true,
         nombre: true,
+        nombreComercial: true,
         email: true,
         role: true,
-        clienteId: true,
         activo: true,
         createdAt: true,
+        cliente: { select: { id: true, nombreComercial: true } },
       },
     });
 
     res.json(usuario);
   } catch (error) {
     console.error("❌ Error cambiando estado de usuario:", error);
-    res.status(500).json({ message: "Error cambiando estado de usuario", error });
+    res
+      .status(500)
+      .json({ message: "Error cambiando estado de usuario", error });
   }
 };
 
@@ -179,7 +189,7 @@ exports.reinvitar = async (req, res) => {
     // Enviar correo
     await sendActivationEmail({
       to: email,
-      name: usuario.nombreComercial,
+      name: usuario.nombreComercial || usuario.nombre,
       token,
     });
 
