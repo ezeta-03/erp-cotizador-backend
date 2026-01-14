@@ -26,13 +26,22 @@ exports.login = async (req, res) => {
     return res.status(401).json({ message: "Contraseña incorrecta" });
   }
 
+  // 👇 incluye nombre y role en el payload
   const token = jwt.sign(
-    { id: user.id, role: user.role },
+    { id: user.id, nombre: user.nombre, role: user.role },
     process.env.JWT_SECRET,
     { expiresIn: "8h" }
   );
 
-  res.json({ token });
+  // 👇 devuelve también el objeto user
+  res.json({
+    token,
+    user: {
+      id: user.id,
+      nombre: user.nombre,
+      role: user.role,
+    },
+  });
 };
 
 // Activar cuenta
@@ -87,3 +96,29 @@ exports.cambiarPassword = async (req, res) => {
 
   res.json({ message: "Contraseña actualizada" });
 };
+
+// Obtener usuario actual
+exports.me = async (req, res) => {
+  try {
+    const user = await prisma.usuario.findUnique({
+      where: { id: req.user.id },
+      select: {
+        id: true,
+        nombre: true,
+        role: true,
+        email: true,
+        activo: true,
+      },
+    });
+
+    if (!user) {
+      return res.status(404).json({ message: "Usuario no encontrado" });
+    }
+
+    res.json(user);
+  } catch (error) {
+    console.error("❌ Error en /auth/me:", error);
+    res.status(500).json({ message: "Error obteniendo usuario actual" });
+  }
+};
+

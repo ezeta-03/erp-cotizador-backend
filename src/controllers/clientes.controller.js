@@ -61,7 +61,14 @@ exports.actualizar = async (req, res) => {
     }
 
     // Solo actualizar campos permitidos
-    const { nombreComercial, documento, telefono, nombreContacto, email, direccion } = req.body;
+    const {
+      nombreComercial,
+      documento,
+      telefono,
+      nombreContacto,
+      email,
+      direccion,
+    } = req.body;
 
     const cliente = await prisma.cliente.update({
       where: { id: clienteId },
@@ -107,13 +114,17 @@ exports.invitarCliente = async (req, res) => {
     const { email } = req.body;
 
     // Verificar cliente
-    const cliente = await prisma.cliente.findUnique({ where: { id: clienteId } });
+    const cliente = await prisma.cliente.findUnique({
+      where: { id: clienteId },
+    });
     if (!cliente) {
       return res.status(400).json({ message: "Cliente inválido" });
     }
 
     // Verificar usuario existente
-    const usuarioExistente = await prisma.usuario.findUnique({ where: { email } });
+    const usuarioExistente = await prisma.usuario.findUnique({
+      where: { email },
+    });
 
     const token = crypto.randomUUID();
     const expires = new Date();
@@ -123,7 +134,9 @@ exports.invitarCliente = async (req, res) => {
 
     if (usuarioExistente) {
       if (usuarioExistente.activo) {
-        return res.status(400).json({ message: "El usuario ya tiene una cuenta activa" });
+        return res
+          .status(400)
+          .json({ message: "El usuario ya tiene una cuenta activa" });
       }
 
       // Reinvitar usuario inactivo
@@ -166,12 +179,11 @@ exports.invitarCliente = async (req, res) => {
     res.json({ message: "Invitación enviada correctamente" });
   } catch (error) {
     console.error("❌ ERROR INVITAR CLIENTE:", error);
-    res.status(500).json({ message: "Error invitando cliente", error: error.message });
+    res
+      .status(500)
+      .json({ message: "Error invitando cliente", error: error.message });
   }
 };
-
-
-
 
 // ===============================
 // 📊 Actividad de clientes (análisis)
@@ -218,9 +230,7 @@ exports.actividadClientes = async (req, res) => {
     const filtradas = producto
       ? cotizaciones.filter((c) =>
           c.items.some((i) =>
-            i.producto.material
-              .toLowerCase()
-              .includes(producto.toLowerCase())
+            i.producto.material.toLowerCase().includes(producto.toLowerCase())
           )
         )
       : cotizaciones;
@@ -231,5 +241,47 @@ exports.actividadClientes = async (req, res) => {
     res.status(500).json({
       message: "Error obteniendo actividad de clientes",
     });
+  }
+};
+
+exports.getActividadClientes = async (req, res) => {
+  try {
+    const user = req.user;
+    const { cliente, producto, desde, hasta } = req.query;
+    const where = {};
+    if (user.role === "VENTAS") {
+      where.usuarioId = user.id;
+    }
+    if (cliente) {
+      where.cliente = { nombreComercial: { contains: cliente } };
+    }
+    if (producto) {
+      where.items = {
+        some: { producto: { material: { contains: producto } } },
+      };
+    }
+    if (desde || hasta) {
+      where.createdAt = {};
+      if (desde) where.createdAt.gte = new Date(desde);
+      if (hasta) where.createdAt.lte = new Date(hasta);
+    }
+    const actividad = await prisma.cotizacion.findMany({
+      where,
+      include: {
+        cliente: true,
+        usuario: { select: { id: true, nombre: true } },
+        items: { include: { producto: true } },
+      },
+      orderBy: { createdAt: "desc" },
+    });
+    res.json(actividad);
+  } catch (error) {
+    console.error("❌ Error obteniendo actividad de clientes:", error);
+    res
+      .status(500)
+      .json({
+        message: "Error obteniendo actividad de clientes",
+        error: error.message,
+      });
   }
 };

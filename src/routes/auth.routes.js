@@ -1,11 +1,12 @@
-const router = require("express").Router();
+const express = require("express");
+const router = express.Router();
 
-// ✅ importar middlewares
-const auth = require("../middelwares/auth.middleware");
-const allowRoles = require("../middelwares/role.middleware");
-
-// ✅ importar TODO el controller
+// Controllers
 const authController = require("../controllers/auth.controller");
+
+// Middlewares
+const auth = require("../middlewares/auth.middleware");
+const allowRoles = require("../middlewares/role.middleware");
 
 // ================== AUTH ==================
 router.post("/login", authController.login);
@@ -18,5 +19,8 @@ router.post(
   allowRoles("CLIENTE"),
   authController.cambiarPassword
 );
+
+// ================== USUARIO ACTUAL ==================
+router.get("/me", auth, authController.me);
 
 module.exports = router;

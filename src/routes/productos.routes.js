@@ -1,6 +1,6 @@
 const router = require("express").Router();
-const auth = require("../middelwares/auth.middleware");
-const allowRoles = require("../middelwares/role.middleware");
+const auth = require("../middlewares/auth.middleware");
+const allowRoles = require("../middlewares/role.middleware");
 const productosController = require("../controllers/productos.controller");
 
 // Crear producto

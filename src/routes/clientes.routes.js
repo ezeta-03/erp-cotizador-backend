@@ -1,39 +1,19 @@
 const router = require("express").Router();
-const auth = require("../middelwares/auth.middleware");
-const allowRoles = require("../middelwares/role.middleware");
+const auth = require("../middlewares/auth.middleware");
+const allowRoles = require("../middlewares/role.middleware");
 const clientesController = require("../controllers/clientes.controller");
 
 // Crear cliente
-router.post(
-  "/",
-  auth,
-  allowRoles("ADMIN", "VENTAS"),
-  clientesController.crear
-);
+router.post("/", auth, allowRoles("ADMIN", "VENTAS"), clientesController.crear);
 
 // Listar clientes
-router.get(
-  "/",
-  auth,
-  allowRoles("ADMIN", "VENTAS"),
-  clientesController.listar
-);
+router.get("/", auth, allowRoles("ADMIN", "VENTAS"), clientesController.listar);
 
 // Actualizar cliente
-router.put(
-  "/:id",
-  auth,
-  allowRoles("ADMIN"),
-  clientesController.actualizar
-);
+router.put("/:id", auth, allowRoles("ADMIN"), clientesController.actualizar);
 
 // Eliminar cliente
-router.delete(
-  "/:id",
-  auth,
-  allowRoles("ADMIN"),
-  clientesController.eliminar
-);
+router.delete("/:id", auth, allowRoles("ADMIN"), clientesController.eliminar);
 
 // Invitar cliente
 router.post(
@@ -46,11 +26,18 @@ router.post(
 );
 
 // Análisis clientes + cotizaciones
+// router.get(
+//   "/actividad",
+//   auth,
+//   allowRoles("ADMIN", "VENTAS"),
+//   clientesController.actividadClientes
+// );
+
 router.get(
   "/actividad",
   auth,
   allowRoles("ADMIN", "VENTAS"),
-  clientesController.actividadClientes
+  clientesController.getActividadClientes
 );
 
 module.exports = router;
