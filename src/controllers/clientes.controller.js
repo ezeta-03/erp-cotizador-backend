@@ -2,7 +2,7 @@ const prisma = require("../config/prisma");
 const crypto = require("crypto");
 const bcrypt = require("bcryptjs");
 const { sendActivationEmail } = require("../services/mail.service");
-
+// const db = require("../models"); // ajusta según tu ORM/estructura
 // Crear cliente
 exports.crear = async (req, res) => {
   try {
@@ -277,11 +277,28 @@ exports.getActividadClientes = async (req, res) => {
     res.json(actividad);
   } catch (error) {
     console.error("❌ Error obteniendo actividad de clientes:", error);
-    res
-      .status(500)
-      .json({
-        message: "Error obteniendo actividad de clientes",
-        error: error.message,
-      });
+    res.status(500).json({
+      message: "Error obteniendo actividad de clientes",
+      error: error.message,
+    });
+  }
+};
+
+exports.actividadesClientes = async (req, res) => {
+  try {
+    const clienteId = parseInt(req.params.id, 10);
+    const cotizaciones = await prisma.cotizacion.findMany({
+      where: { clienteId },
+      include: {
+        cliente: { select: { nombreComercial: true } },
+        usuario: { select: { nombre: true } },
+        items: { include: { producto: { select: { material: true } } } },
+      },
+      orderBy: { createdAt: "desc" },
+    });
+    res.json(cotizaciones);
+  } catch (error) {
+    console.error("❌ Error cargando actividad del cliente:", error);
+    res.status(500).json({ message: "Error cargando actividad del cliente" });
   }
 };

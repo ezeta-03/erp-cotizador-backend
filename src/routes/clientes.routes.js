@@ -40,4 +40,12 @@ router.get(
   clientesController.getActividadClientes
 );
 
+router.get(
+  "/:id/actividad",
+  auth,
+  allowRoles("ADMIN", "VENTAS"),
+  clientesController.actividadesClientes
+);
+
+
 module.exports = router;
