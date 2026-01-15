@@ -20,7 +20,9 @@ module.exports = (cotizacion) => {
 
 <div>
   <p><strong>Cliente:</strong> ${cliente?.nombreComercial || ""}</p>
-  <p><strong>Fecha:</strong> ${createdAt ? new Date(createdAt).toLocaleDateString() : ""}</p>
+  <p><strong>Fecha:</strong> ${
+    createdAt ? new Date(createdAt).toLocaleDateString() : ""
+  }</p>
 </div>
 
 <table>
@@ -36,21 +38,13 @@ module.exports = (cotizacion) => {
 <tbody>
 ${items
   .map((item, i) => {
-    const glosa =
-      item.adicionales && item.adicionales.length > 0
-        ? item.adicionales
-            .filter((a) => a.seleccionado)
-            .map((a) => `con ${a.adicional?.nombre || ""}`)
-            .join(", ")
-        : "";
-    return `
-<tr>
-  <td>${i + 1}</td>
-  <td>${item.producto?.material || ""} ${glosa}</td>
-  <td>${item.cantidad || 0}</td>
-  <td>S/. ${Number(item.precio || 0).toFixed(2)}</td>
-  <td>S/. ${Number(item.subtotal || 0).toFixed(2)}</td>
-</tr>`;
+    return ` <tr> <td>${i + 1}</td> <td>${item.producto?.material || item.producto?.servicio || ""} ${
+      item.glosa || ""
+    }</td> <td>${item.cantidad || 0}</td> <td>S/. ${Number(
+      item.precio || 0
+    ).toFixed(2)}</td> <td>S/. ${Number(item.subtotal || 0).toFixed(
+      2
+    )}</td> </tr>`;
   })
   .join("")}
 </tbody>
