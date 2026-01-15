@@ -9,83 +9,60 @@ const { generarGlosa } = require("../utils/glosa");
 ========================= */
 exports.crearCotizacion = async (req, res) => {
   try {
-    const { numero, clienteId, items } = req.body;
-    const config = await prisma.configuracion.findFirst();
+    const { clienteId, usuarioId, items } = req.body;
 
-    if (!items || items.length === 0) {
-      return res.status(400).json({ message: "Debe agregar productos" });
-    }
+    // Configuración global
+    const configuracion = await prisma.configuracion.findFirst();
 
-    const cliente = await prisma.cliente.findUnique({
-      where: { id: Number(clienteId) },
-    });
-    if (!cliente) return res.status(400).json({ message: "Cliente no existe" });
+    // Generar número oficial de cotización por vendedor
+    const vendedor = await prisma.usuario.findUnique({ where: { id: usuarioId } });
+    const secuencia = await prisma.cotizacion.count({ where: { usuarioId } }) + 1;
+    const numero = `COT-${vendedor.username || vendedor.id}-${new Date().getFullYear()}-${secuencia}`;
 
-    let totalCotizacion = 0;
-    const itemsData = [];
-
-    for (const item of items) {
-      const cantidad = Number(item.cantidad);
-      const precioBase = Number(item.precio);
-      let subtotal = cantidad * precioBase;
-
-      // Construimos la glosa base
-      let descripcion = item.material;
-
-      const detalle = {
-        productoId: Number(item.productoId),
-        cantidad,
-        precio: precioBase,
-        subtotal,
-        descripcion, // 👈 guardamos la glosa aquí
-      };
-
-      if (item.adicionales && item.adicionales.length > 0) {
-        detalle.adicionales = {
-          create: await Promise.all(
-            item.adicionales.map(async (adicionalSeleccionado) => {
-              const adicional = await prisma.productoAdicional.findUnique({
-                where: { id: adicionalSeleccionado.id },
-              });
-
-              const precioFinalAdicional = calcularPrecioAdicional(
-                adicional.precio,
-                config
-              );
-
-              if (adicionalSeleccionado.seleccionado) {
-                subtotal += precioFinalAdicional * cantidad;
-                // Concatenamos a la glosa
-                descripcion += ` con ${adicional.nombre}`;
-              }
-
-              return {
-                adicionalId: adicional.id,
-                seleccionado: adicionalSeleccionado.seleccionado,
-                precio: adicionalSeleccionado.seleccionado
-                  ? precioFinalAdicional
-                  : 0,
-              };
-            })
-          ),
-        };
-
-        detalle.subtotal = subtotal;
-        detalle.descripcion = descripcion; // 👈 actualizamos glosa final
-      }
-
-      totalCotizacion += subtotal;
-      itemsData.push(detalle);
-    }
-
+    // Crear cotización con items
     const cotizacion = await prisma.cotizacion.create({
       data: {
+        clienteId,
+        usuarioId,
         numero,
-        clienteId: cliente.id,
-        usuarioId: req.user.id,
-        total: totalCotizacion,
         estado: "PENDIENTE",
-        items: { create: itemsData },
+        total: 0,
+        items: {
+          create: items.map((item) => {
+            // cálculos base
+            const costoParcial1 = item.costo_material * (1 + configuracion.costo_indirecto);
+            const costoParcial2 = costoParcial1 * (1 + configuracion.porcentaje_administrativo);
+            const precioBase = costoParcial2 * (1 + configuracion.rentabilidad);
+
+            // suma de adicionales seleccionados
+            const sumaAdicionales = item.adicionales
+              ? item.adicionales
+                  .filter((a) => a.seleccionado)
+                  .reduce((acc, a) => acc + Number(a.precio || 0), 0)
+              : 0;
+
+            const precioFinal = precioBase + sumaAdicionales;
+            const subtotal = precioFinal * item.cantidad;
+
+            return {
+              productoId: item.productoId,
+              cantidad: item.cantidad,
+              precio: precioFinal,
+              subtotal,
+              adicionales: item.adicionales
+                ? {
+                    create: item.adicionales
+                      .filter((a) => a.seleccionado)
+                      .map((a) => ({
+                        adicionalId: a.id,
+                        seleccionado: true,
+                        precio: Number(a.precio),
+                      })),
+                  }
+                : undefined,
+            };
+          }),
+        },
       },
       include: {
         cliente: true,
@@ -98,12 +75,30 @@ exports.crearCotizacion = async (req, res) => {
       },
     });
 
-    res.json(cotizacion);
+    // recalcular total
+    const total = cotizacion.items.reduce((acc, item) => acc + item.subtotal, 0);
+
+    const updated = await prisma.cotizacion.update({
+      where: { id: cotizacion.id },
+      data: { total },
+      include: {
+        cliente: true,
+        items: {
+          include: {
+            producto: true,
+            adicionales: { include: { adicional: true } },
+          },
+        },
+      },
+    });
+
+    res.json(updated);
   } catch (error) {
-    console.error("❌ Crear cotización:", error);
-    res.status(500).json({ message: "Error al crear cotización" });
+    console.error("❌ Error creando cotización:", error);
+    res.status(500).json({ message: "Error creando cotización", detail: error.message });
   }
 };
+
 
 /* =========================
    LISTAR (ADMIN / VENTAS)
@@ -115,7 +110,9 @@ exports.listarCotizaciones = async (req, res) => {
       where,
       include: {
         cliente: true,
-        usuario: { select: { id: true, nombre: true, email: true, role: true } },
+        usuario: {
+          select: { id: true, nombre: true, email: true, role: true },
+        },
         items: {
           include: {
             producto: true,
@@ -232,18 +229,24 @@ exports.facturarCotizacion = async (req, res) => {
   try {
     const { id } = req.params;
 
-    const cotizacion = await prisma.cotizacion.findUnique({ where: { id: Number(id) } });
+    const cotizacion = await prisma.cotizacion.findUnique({
+      where: { id: Number(id) },
+    });
 
     if (!cotizacion) {
       return res.status(404).json({ message: "Cotización no encontrada" });
     }
 
     if (cotizacion.estado !== "APROBADA") {
-      return res.status(400).json({ message: "Solo se puede facturar una cotización aprobada" });
+      return res
+        .status(400)
+        .json({ message: "Solo se puede facturar una cotización aprobada" });
     }
 
     // Validar rol
-    const usuario = await prisma.usuario.findUnique({ where: { id: req.user.id } });
+    const usuario = await prisma.usuario.findUnique({
+      where: { id: req.user.id },
+    });
     if (usuario?.role !== "VENTAS" && usuario?.role !== "ADMIN") {
       return res.status(403).json({ message: "No autorizado para facturar" });
     }
@@ -259,13 +262,11 @@ exports.facturarCotizacion = async (req, res) => {
     res.json(updated);
   } catch (error) {
     console.error("❌ Error facturando cotización:", error);
-    res.status(500).json({ message: "Error facturando cotización", error: error.message });
+    res
+      .status(500)
+      .json({ message: "Error facturando cotización", error: error.message });
   }
 };
-
-
-
-
 
 /* =========================
    PDF
