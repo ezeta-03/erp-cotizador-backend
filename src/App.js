@@ -1,6 +1,7 @@
 const express = require("express");
 const cors = require("cors");
 
+const app = express();
 app.use(
   cors({
     origin: [
@@ -19,7 +20,6 @@ const dashboardRoutes = require("./routes/dashboard.routes");
 const statsRoutes = require("./routes/stats.routes");
 const usuariosRoutes = require("./routes/usuarios.routes");
 const configuracionRouter = require("./routes/configuracion.routes");
-const app = express();
 
 // app.use(cors());
 app.use(express.json());
