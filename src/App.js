@@ -1,6 +1,16 @@
 const express = require("express");
 const cors = require("cors");
 
+app.use(
+  cors({
+    origin: [
+      "https://erp-cotizador-frontend.vercel.app/",
+      //"https://netwise.pe"  si luego usarás dominio propio
+    ],
+    credentials: true,
+  })
+);
+
 const authRoutes = require("./routes/auth.routes");
 const cotizacionesRoutes = require("./routes/cotizaciones.routes");
 const clientesRoutes = require("./routes/clientes.routes");
@@ -11,7 +21,7 @@ const usuariosRoutes = require("./routes/usuarios.routes");
 const configuracionRouter = require("./routes/configuracion.routes");
 const app = express();
 
-app.use(cors());
+// app.use(cors());
 app.use(express.json());
 
 app.use("/api/auth", authRoutes);
