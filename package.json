@@ -16,7 +16,10 @@
     "diagnostico-db": "node test-db.js",
     "diagnostico-pdf": "node diagnostico-pdf.js",
     "check-system": "node check-system.js",
-    "setup-production": "node setup-production.js"
+    "setup-production": "node setup-production.js",
+    "setup-local": "node setup-local.js",
+    "guia-setup": "node guia-setup.js",
+    "check-supabase": "node check-supabase.js"
   },
   "dependencies": {
     "@prisma/client": "^5.22.0",
