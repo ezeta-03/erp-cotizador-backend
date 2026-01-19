@@ -1,6 +1,55 @@
 # Backend - Sistema de Cotización ZAAZMAGO
 
-## �️ Configuración de Base de Datos (Supabase)
+## 🚨 PROBLEMA CRÍTICO: Proyecto Supabase No Encontrado
+
+**❌ Error Detectado:** El proyecto Supabase configurado no existe o no está activo.
+
+### 🔍 Verificación del Problema
+Ejecuta este comando para verificar el estado de tu proyecto Supabase:
+```bash
+node verify-supabase-project.js
+```
+
+Si obtienes "ENOTFOUND", significa que el proyecto no existe.
+
+### 🛠️ Solución: Recrear Proyecto Supabase
+
+#### Paso 1: Verificar Proyectos Existentes
+1. Ve a [https://supabase.com/dashboard](https://supabase.com/dashboard)
+2. Revisa si tienes proyectos activos
+3. Si el proyecto fue eliminado, necesitarás crear uno nuevo
+
+#### Paso 2: Crear Nuevo Proyecto
+1. En Supabase Dashboard, haz clic en "New Project"
+2. Elige un nombre descriptivo (ej: "cotizador-zaazmago-prod")
+3. Selecciona la región más cercana (recomendado: AWS US East 1)
+4. Crea una contraseña segura para la base de datos
+5. Espera a que se complete la configuración inicial (puede tomar varios minutos)
+
+#### Paso 3: Obtener Nueva DATABASE_URL
+1. En el nuevo proyecto → **Settings** → **Database**
+2. Copia la **Connection pooling** → **Connection string**
+3. Asegúrate de que termine con `?sslmode=require`
+
+#### Paso 4: Actualizar Variables de Entorno
+Actualiza tu archivo `.env` con la nueva URL:
+```env
+DATABASE_URL=postgresql://postgres.[nuevo-project-ref]:[nueva-password]@aws-0-us-east-1.pooler.supabase.com:5432/postgres?sslmode=require
+```
+
+#### Paso 5: Verificar Conexión
+```bash
+node verify-supabase-project.js
+```
+
+Deberías ver "✅ El proyecto Supabase parece estar activo"
+
+#### Paso 6: Inicializar Base de Datos
+```bash
+npm run setup-production
+```
+
+## 📋 Configuración Original (para proyectos existentes)
 
 ### 1. Crear proyecto en Supabase
 1. Ve a [supabase.com](https://supabase.com) y crea una cuenta

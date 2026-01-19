@@ -19,7 +19,9 @@
     "setup-production": "node setup-production.js",
     "setup-local": "node setup-local.js",
     "guia-setup": "node guia-setup.js",
-    "check-supabase": "node check-supabase.js"
+    "check-supabase": "node check-supabase.js",
+    "verify-supabase": "node verify-supabase-project.js",
+    "update-supabase": "node update-supabase-config.js"
   },
   "dependencies": {
     "@prisma/client": "^5.22.0",
@@ -31,6 +33,7 @@
     "jsonwebtoken": "^9.0.3",
     "multer": "^2.0.2",
     "nodemailer": "^7.0.12",
+    "pg": "^8.17.1",
     "prisma": "^5.22.0",
     "puppeteer": "^24.34.0",
     "xlsx": "^0.18.5"
