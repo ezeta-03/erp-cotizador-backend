@@ -5,7 +5,7 @@
 ### **Paso 1: Obtener la URL de Producción**
 Después de desplegar el backend en Render, obtendrás una URL como:
 ```
-https://tu-backend-render.onrender.com
+https://erp-cotizador-backend.onrender.com
 ```
 
 ### **Paso 2: Importar Colección de Producción**
