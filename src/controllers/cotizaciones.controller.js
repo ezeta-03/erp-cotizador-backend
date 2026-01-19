@@ -126,31 +126,136 @@ exports.crearCotizacion = async (req, res) => {
 ========================= */
 exports.listarCotizaciones = async (req, res) => {
   try {
-    const where = req.user.role === "VENTAS" ? { usuarioId: req.user.id } : {};
-    const cotizaciones = await prisma.cotizacion.findMany({
-      where,
-      include: {
-        cliente: true,
+    // Datos ficticios para desarrollo
+    const cotizacionesFicticias = [
+      {
+        id: 1,
+        numero: "COT-2026-001",
+        total: 15000,
+        estado: "PENDIENTE",
+        createdAt: "2026-01-15T10:00:00Z",
+        cliente: {
+          nombreComercial: "Empresa ABC SAC"
+        },
         usuario: {
-          select: { id: true, nombre: true, email: true, role: true },
+          nombre: "Juan Pérez",
+          email: "juan@ventas.com"
         },
-        items: {
-          include: {
-            producto: true,
-            adicionales: { include: { adicional: true } },
-          },
-        },
+        items: [
+          {
+            cantidad: 10,
+            precio: 1500,
+            subtotal: 15000,
+            descripcion: "Vinil básico para fachada",
+            producto: {
+              nombre: "Vinil Básico"
+            }
+          }
+        ]
       },
-      orderBy: { createdAt: "desc" },
-    });
-    const cotizacionesConGlosa = cotizaciones.map((c) => ({
-      ...c,
-      items: c.items.map((item) => ({
-        ...item,
-        glosa: generarGlosa(item.producto, item.adicionales),
-      })),
-    }));
-    res.json(cotizacionesConGlosa);
+      {
+        id: 2,
+        numero: "COT-2026-002",
+        total: 25000,
+        estado: "APROBADA",
+        createdAt: "2026-01-14T14:30:00Z",
+        cliente: {
+          nombreComercial: "Constructora XYZ"
+        },
+        usuario: {
+          nombre: "Ana García",
+          email: "ana@ventas.com"
+        },
+        items: [
+          {
+            cantidad: 5,
+            precio: 5000,
+            subtotal: 25000,
+            descripcion: "Letreros 3D",
+            producto: {
+              nombre: "Letrero 3D"
+            }
+          }
+        ]
+      },
+      {
+        id: 3,
+        numero: "COT-2026-003",
+        total: 8000,
+        estado: "FACTURADA",
+        createdAt: "2026-01-13T09:15:00Z",
+        cliente: {
+          nombreComercial: "Tienda Local EIRL"
+        },
+        usuario: {
+          nombre: "Juan Pérez",
+          email: "juan@ventas.com"
+        },
+        items: [
+          {
+            cantidad: 2,
+            precio: 4000,
+            subtotal: 8000,
+            descripcion: "Banner publicitario",
+            producto: {
+              nombre: "Banner Delgado"
+            }
+          }
+        ]
+      },
+      {
+        id: 4,
+        numero: "COT-2026-004",
+        total: 12000,
+        estado: "RECHAZADA",
+        createdAt: "2026-01-12T16:45:00Z",
+        cliente: {
+          nombreComercial: "Restaurante Gourmet"
+        },
+        usuario: {
+          nombre: "Ana García",
+          email: "ana@ventas.com"
+        },
+        items: [
+          {
+            cantidad: 3,
+            precio: 4000,
+            subtotal: 12000,
+            descripcion: "Instalación de letreros luminosos",
+            producto: {
+              nombre: "Letrero Luminoso"
+            }
+          }
+        ]
+      },
+      {
+        id: 5,
+        numero: "COT-2026-005",
+        total: 22000,
+        estado: "PENDIENTE",
+        createdAt: "2026-01-11T11:20:00Z",
+        cliente: {
+          nombreComercial: "Centro Comercial Plaza"
+        },
+        usuario: {
+          nombre: "Juan Pérez",
+          email: "juan@ventas.com"
+        },
+        items: [
+          {
+            cantidad: 8,
+            precio: 2750,
+            subtotal: 22000,
+            descripcion: "Vinil retroiluminado para escaparates",
+            producto: {
+              nombre: "Vinil Retroiluminado"
+            }
+          }
+        ]
+      }
+    ];
+
+    res.json(cotizacionesFicticias);
   } catch (error) {
     res.status(500).json({ message: "Error al listar cotizaciones" });
   }
