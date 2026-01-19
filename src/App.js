@@ -5,10 +5,10 @@ const app = express();
 app.use(
   cors({
     origin: [
-      "https://erp-cotizador-frontend.vercel.app/",
-      //"https://netwise.pe"  si luego usarás dominio propio
+      "https://erp-cotizador-frontend.vercel.app",
+      "http://localhost:5173" // Para desarrollo local
     ],
-    credentials: true,
+    credentials: false, // Cambiado a false ya que usas JWT en headers
   })
 );
 

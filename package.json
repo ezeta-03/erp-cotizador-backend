@@ -6,11 +6,12 @@
   "scripts": {
     "dev": "nodemon src/server.js",
     "postinstall": "prisma generate",
-    "start": "node src/server.js",
+    "start": "npx prisma migrate deploy --schema=./prisma/schema.prisma && npm run seed:completo && node src/server.js",
     "seed:parte1": "node prisma/seed-parte1.js",
     "seed:parte2": "node prisma/seed-parte2.js",
     "seed:parte3": "node prisma/seed-parte3.js",
     "seed:all": "npm run seed:parte1 && npm run seed:parte2 && npm run seed:parte3",
+    "seed:completo": "node prisma/seed-completo.js",
     "test": "echo \"Error: no test specified\" && exit 1"
   },
   "dependencies": {

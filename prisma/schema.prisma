@@ -1,4 +1,3 @@
-// prisma/schema.prisma
 generator client {
   provider = "prisma-client-js"
 }
@@ -6,6 +5,126 @@ generator client {
 datasource db {
   provider = "postgresql"
   url      = env("DATABASE_URL")
+}
+
+model Configuracion {
+  id                        Int      @id @default(autoincrement())
+  costo_indirecto           Float    @default(0.10)
+  porcentaje_administrativo Float    @default(0.17)
+  rentabilidad              Float    @default(0.30)
+  updatedAt                 DateTime @updatedAt
+}
+
+model Usuario {
+  id                Int           @id @default(autoincrement())
+  nombre            String
+  nombreComercial   String?
+  email             String        @unique
+  password          String?
+  role              Rol
+  activo            Boolean       @default(true)
+  activationToken   String?       @unique
+  activationExpires DateTime?
+  createdAt         DateTime      @default(now())
+  cliente           Cliente?
+  cotizaciones      Cotizacion[]
+  metas             MetaMensual[]
+}
+
+model Cliente {
+  id              Int          @id @default(autoincrement())
+  nombreComercial String
+  documento       String       @unique
+  nombreContacto  String
+  telefono        String?
+  email           String?
+  direccion       String?
+  usuarioId       Int?         @unique
+  usuario         Usuario?     @relation(fields: [usuarioId], references: [id])
+  cotizaciones    Cotizacion[]
+}
+
+model Producto {
+  id              Int                 @id @default(autoincrement())
+  categoria       String
+  servicio        String
+  material        String?
+  unidad          String?
+  costo_material  Float
+  costo_parcial_1 Float
+  costo_parcial_2 Float
+  precio_final    Float
+  margen          Float
+  activo          Boolean             @default(true)
+  nombre          String?
+  createdAt       DateTime            @default(now())
+  updatedAt       DateTime            @updatedAt
+  items           CotizacionItem[]
+  adicionales     ProductoAdicional[]
+
+  @@index([categoria])
+  @@index([servicio])
+}
+
+model ProductoAdicional {
+  id         Int                   @id @default(autoincrement())
+  nombre     String
+  precio     Float
+  productoId Int
+  items      CotizacionAdicional[]
+  producto   Producto              @relation(fields: [productoId], references: [id])
+}
+
+model Cotizacion {
+  id                  Int              @id @default(autoincrement())
+  numero              String           @unique
+  total               Float
+  estado              EstadoCotizacion @default(PENDIENTE)
+  createdAt           DateTime         @default(now())
+  respondidaAt        DateTime?
+  respuestaComentario String?
+  facturadaAt         DateTime?
+  clienteId           Int
+  usuarioId           Int
+  cliente             Cliente          @relation(fields: [clienteId], references: [id])
+  usuario             Usuario          @relation(fields: [usuarioId], references: [id])
+  items               CotizacionItem[]
+}
+
+model CotizacionItem {
+  id           Int                   @id @default(autoincrement())
+  cotizacionId Int
+  productoId   Int
+  cantidad     Int
+  precio       Float
+  subtotal     Float
+  descripcion  String?
+  adicionales  CotizacionAdicional[]
+  cotizacion   Cotizacion            @relation(fields: [cotizacionId], references: [id])
+  producto     Producto              @relation(fields: [productoId], references: [id])
+}
+
+model CotizacionAdicional {
+  id               Int               @id @default(autoincrement())
+  cotizacionItemId Int
+  adicionalId      Int
+  seleccionado     Boolean           @default(false)
+  precio           Float
+  adicional        ProductoAdicional @relation(fields: [adicionalId], references: [id])
+  cotizacionItem   CotizacionItem    @relation(fields: [cotizacionItemId], references: [id])
+}
+
+model MetaMensual {
+  id        Int      @id @default(autoincrement())
+  usuarioId Int
+  monto     Float
+  mes       Int
+  anio      Int
+  createdAt DateTime @default(now())
+  usuario   Usuario  @relation(fields: [usuarioId], references: [id])
+
+  @@unique([usuarioId, mes, anio])
+  @@index([mes, anio])
 }
 
 enum Rol {
@@ -19,144 +138,4 @@ enum EstadoCotizacion {
   APROBADA
   RECHAZADA
   FACTURADA
-}
-
-model Configuracion {
-  id                        Int      @id @default(autoincrement())
-  costo_indirecto           Float    @default(0.10) // +10%
-  porcentaje_administrativo Float    @default(0.17) // +17%
-  rentabilidad              Float    @default(0.30) // +30%
-  updatedAt                 DateTime @updatedAt
-}
-
-model Usuario {
-  id                Int       @id @default(autoincrement())
-  nombre            String
-  nombreComercial   String?
-  email             String    @unique
-  password          String?
-  role              Rol
-  activo            Boolean   @default(true)
-  activationToken   String?   @unique
-  activationExpires DateTime?
-
-  cotizaciones Cotizacion[]
-  metas        MetaMensual[]
-
-  createdAt DateTime @default(now())
-  cliente   Cliente?
-}
-
-model Cliente {
-  id              Int     @id @default(autoincrement())
-  nombreComercial String
-  documento       String  @unique
-  nombreContacto  String
-  telefono        String?
-  email           String?
-  direccion       String?
-
-  usuarioId Int?     @unique
-  usuario   Usuario? @relation(fields: [usuarioId], references: [id])
-
-  cotizaciones Cotizacion[]
-}
-
-model Producto {
-  id Int @id @default(autoincrement())
-
-  // Columnas del Excel
-  categoria       String // A: Categoría
-  servicio        String // B: Servicio
-  material        String? // C: Material
-  unidad          String? // D: Unidad
-  costo_material  Float // E: Costo Material [S/.]
-  costo_parcial_1 Float // F: Costo Parcial 1 = F * 1.10
-  costo_parcial_2 Float // G: Costo Parcial 2 = G * 1.17
-  precio_final    Float // H: Precio Final Unitario = H * 1.20
-  margen          Float // I: Margen = I * 0.20
-
-  // Campos de control
-  activo Boolean @default(true)
-
-  // COMPATIBILIDAD con código anterior
-  nombre String? // Alias de 'servicio'
-
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-
-  items       CotizacionItem[]
-  adicionales ProductoAdicional[]
-
-  @@index([categoria])
-  @@index([servicio])
-}
-
-model ProductoAdicional {
-  id         Int      @id @default(autoincrement())
-  nombre     String // Ej: "Tubos", "Pedestal"
-  precio     Float // Precio base del adicional
-  productoId Int
-  producto   Producto @relation(fields: [productoId], references: [id])
-
-  items CotizacionAdicional[]
-}
-
-model Cotizacion {
-  id     Int              @id @default(autoincrement())
-  numero String           @unique
-  total  Float
-  estado EstadoCotizacion @default(PENDIENTE)
-  createdAt DateTime @default(now())
-  respondidaAt        DateTime?
-  respuestaComentario String? 
-  facturadaAt         DateTime?
-  
-  clienteId Int
-  usuarioId Int
-
-  cliente Cliente @relation(fields: [clienteId], references: [id])
-  usuario Usuario @relation(fields: [usuarioId], references: [id])
-
-  items CotizacionItem[]
-}
-
-model CotizacionItem {
-  id           Int   @id @default(autoincrement())
-  cotizacionId Int
-  productoId   Int
-  cantidad     Int
-  precio       Float
-  subtotal     Float
-  descripcion  String?
-  cotizacion Cotizacion @relation(fields: [cotizacionId], references: [id])
-  producto   Producto   @relation(fields: [productoId], references: [id])
-
-  adicionales CotizacionAdicional[]
-}
-
-model CotizacionAdicional {
-  id               Int     @id @default(autoincrement())
-  cotizacionItemId Int
-  adicionalId      Int
-  seleccionado     Boolean @default(false)
-  precio           Float // precio calculado con aumentos
-
-  cotizacionItem CotizacionItem    @relation(fields: [cotizacionItemId], references: [id])
-  adicional      ProductoAdicional @relation(fields: [adicionalId], references: [id])
-}
-
-model MetaMensual {
-  id        Int   @id @default(autoincrement())
-  usuarioId Int
-  monto     Float
-  mes       Int
-  anio      Int
-
-  usuario Usuario @relation(fields: [usuarioId], references: [id])
-
-  createdAt DateTime @default(now())
-
-  @@unique([usuarioId, mes, anio])
-  @@index([mes, anio])
 }
