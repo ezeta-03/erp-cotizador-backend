@@ -126,6 +126,36 @@ exports.crearCotizacion = async (req, res) => {
 ========================= */
 exports.listarCotizaciones = async (req, res) => {
   try {
+    // En producción, usar datos reales de la BD
+    if (process.env.NODE_ENV === 'production') {
+      const user = req.user;
+      let where = {};
+
+      // 🔐 VENTAS solo ve las suyas
+      if (user.role === "VENTAS") {
+        where.usuarioId = user.id;
+      }
+
+      const cotizaciones = await prisma.cotizacion.findMany({
+        where,
+        include: {
+          cliente: true,
+          usuario: {
+            select: { nombre: true, email: true },
+          },
+          items: {
+            include: {
+              producto: true,
+              adicionales: { include: { adicional: true } },
+            },
+          },
+        },
+        orderBy: { createdAt: "desc" },
+      });
+
+      return res.json(cotizaciones);
+    }
+
     // Datos ficticios para desarrollo
     const cotizacionesFicticias = [
       {
@@ -398,51 +428,147 @@ exports.facturarCotizacion = async (req, res) => {
    PDF
 ========================= */
 exports.generarPdf = async (req, res) => {
+  let browser = null;
   try {
-    const cotizacion = await prisma.cotizacion.findUnique({
-      where: { id: Number(req.params.id) },
-      include: {
-        cliente: true,
-        items: {
-          include: {
-            producto: true,
-            adicionales: { include: { adicional: true } },
+    console.log('🚀 Iniciando generación de PDF para ID:', req.params.id);
+
+    let cotizacion;
+
+    // En producción, buscar en BD real
+    if (process.env.NODE_ENV === 'production') {
+      cotizacion = await prisma.cotizacion.findUnique({
+        where: { id: Number(req.params.id) },
+        include: {
+          cliente: true,
+          items: {
+            include: {
+              producto: true,
+              adicionales: { include: { adicional: true } },
+            },
           },
         },
-      },
-    });
+      });
 
-    if (!cotizacion) return res.sendStatus(404);
+      if (!cotizacion) {
+        console.log('❌ Cotización no encontrada en BD');
+        return res.sendStatus(404);
+      }
+    } else {
+      // En desarrollo, usar datos ficticios
+      console.log('⚠️ Usando datos ficticios para desarrollo');
+      const cotizacionesFicticias = {
+        1: {
+          id: 1,
+          numero: "COT-2026-001",
+          total: 15000,
+          estado: "PENDIENTE",
+          createdAt: new Date("2026-01-15T10:00:00Z"),
+          cliente: { nombreComercial: "Empresa ABC SAC" },
+          usuarioId: 1,
+          items: [{
+            cantidad: 10,
+            precio: 1500,
+            subtotal: 15000,
+            descripcion: "Vinil básico para fachada",
+            producto: { nombre: "Vinil Básico", servicio: "Vinil básico para fachada" },
+            adicionales: []
+          }]
+        },
+        2: {
+          id: 2,
+          numero: "COT-2026-002",
+          total: 25000,
+          estado: "APROBADA",
+          createdAt: new Date("2026-01-14T14:30:00Z"),
+          cliente: { nombreComercial: "Constructora XYZ" },
+          usuarioId: 1,
+          items: [{
+            cantidad: 5,
+            precio: 5000,
+            subtotal: 25000,
+            descripcion: "Letreros 3D",
+            producto: { nombre: "Letrero 3D", servicio: "Letreros 3D" },
+            adicionales: []
+          }]
+        },
+        3: {
+          id: 3,
+          numero: "COT-2026-003",
+          total: 8000,
+          estado: "FACTURADA",
+          createdAt: new Date("2026-01-13T09:15:00Z"),
+          cliente: { nombreComercial: "Tienda Local EIRL" },
+          usuarioId: 1,
+          items: [{
+            cantidad: 2,
+            precio: 4000,
+            subtotal: 8000,
+            descripcion: "Banner publicitario",
+            producto: { nombre: "Banner Delgado", servicio: "Banner publicitario" },
+            adicionales: []
+          }]
+        }
+      };
+
+      cotizacion = cotizacionesFicticias[req.params.id];
+
+      if (!cotizacion) {
+        console.log('❌ Cotización ficticia no encontrada');
+        return res.sendStatus(404);
+      }
+    }
+
+    console.log('✅ Cotización encontrada:', cotizacion.numero);
 
     // Agregar glosa a los items para el template
     const cotizacionConGlosa = {
       ...cotizacion,
       items: cotizacion.items.map((item) => ({
         ...item,
-        glosa: generarGlosa(item.producto, item.adicionales),
+        glosa: item.descripcion || generarGlosa(item.producto, item.adicionales || []),
       })),
     };
 
-    // Seguridad
-    if (req.user.role === "VENTAS" && cotizacion.usuarioId !== req.user.id) {
-      return res.sendStatus(403);
+    // Validación de seguridad solo para producción
+    if (process.env.NODE_ENV === 'production') {
+
+      if (
+        req.user.role === "CLIENTE" &&
+        cotizacion.cliente.usuarioId !== req.user.id
+      ) {
+        console.log('❌ Usuario CLIENTE no autorizado');
+        return res.sendStatus(403);
+      }
     }
 
-    if (
-      req.user.role === "CLIENTE" &&
-      cotizacion.cliente.usuarioId !== req.user.id
-    ) {
-      return res.sendStatus(403);
-    }
+    console.log('🔧 Iniciando Puppeteer...');
+    browser = await puppeteer.launch({
+      headless: "new", // Usar "new" en producción para mejor compatibilidad
+      args: [
+        '--no-sandbox',
+        '--disable-setuid-sandbox',
+        '--disable-dev-shm-usage',
+        '--disable-gpu',
+        '--disable-software-rasterizer',
+        '--disable-background-timer-throttling',
+        '--disable-backgrounding-occluded-windows',
+        '--disable-renderer-backgrounding',
+        '--disable-web-security',
+        '--disable-features=VizDisplayCompositor'
+    });
 
-    const browser = await puppeteer.launch({ headless: "new" });
     const page = await browser.newPage();
+    console.log('📄 Página creada, configurando contenido...');
 
     // 👇 TEMPLATE SIN MOSTRAR MARGEN
     await page.setContent(cotizacionTemplate(cotizacionConGlosa));
+    console.log('📄 Contenido establecido, generando PDF...');
+
     const pdf = await page.pdf({ format: "A4", printBackground: true });
+    console.log('✅ PDF generado exitosamente, tamaño:', pdf.length, 'bytes');
 
     await browser.close();
+    browser = null;
 
     res.set({
       "Content-Type": "application/pdf",
@@ -451,9 +577,20 @@ exports.generarPdf = async (req, res) => {
 
     res.send(pdf);
   } catch (error) {
-    console.error(error);
-    res.status(500).json({ message: "Error generando PDF" });
-  }
+    console.error('❌ Error generando PDF:', error.message);
+    console.error('Stack trace:', error.stack);
+
+    if (browser) {
+      try {
+        await browser.close();
+        console.log('🧹 Browser cerrado después de error');
+      } catch (closeError) {
+        console.error('Error cerrando browser:', closeError);
+      }
+    }
+
+    res.status(500).json({
+      message: "Error generando PDF",
 };
 
 // ADMIN y VENTAS: histórico de cotizaciones

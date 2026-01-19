@@ -16,13 +16,11 @@ module.exports = (cotizacion) => {
 </head>
 <body>
 
-<h1>Cotización ${numero}</h1>
+<h1>Cotización ${numero || 'N/A'}</h1>
 
 <div>
-  <p><strong>Cliente:</strong> ${cliente?.nombreComercial || ""}</p>
-  <p><strong>Fecha:</strong> ${
-    createdAt ? new Date(createdAt).toLocaleDateString() : ""
-  }</p>
+  <p><strong>Cliente:</strong> ${cliente?.nombreComercial || 'N/A'}</p>
+  <p><strong>Fecha:</strong> ${createdAt ? new Date(createdAt).toLocaleDateString() : 'N/A'}</p>
 </div>
 
 <table>
@@ -36,22 +34,24 @@ module.exports = (cotizacion) => {
 </tr>
 </thead>
 <tbody>
-${items
+${items && items.length > 0 ? items
   .map((item, i) => {
-    return ` <tr> <td>${i + 1}</td> <td>${item.producto?.material || item.producto?.servicio || ""} ${
-      item.glosa || ""
-    }</td> <td>${item.cantidad || 0}</td> <td>S/. ${Number(
-      item.precio || 0
-    ).toFixed(2)}</td> <td>S/. ${Number(item.subtotal || 0).toFixed(
-      2
-    )}</td> </tr>`;
+    const productoNombre = item.producto?.material || item.producto?.servicio || item.producto?.nombre || 'Producto';
+    const glosa = item.glosa || '';
+    return `<tr>
+      <td>${i + 1}</td>
+      <td>${productoNombre} ${glosa}</td>
+      <td>${item.cantidad || 0}</td>
+      <td>S/. ${(item.precio || 0).toFixed(2)}</td>
+      <td>S/. ${(item.subtotal || 0).toFixed(2)}</td>
+    </tr>`;
   })
-  .join("")}
+  .join('') : '<tr><td colspan="5">No hay items</td></tr>'}
 </tbody>
 </table>
 
 <div class="total-box">
-  TOTAL: S/ ${Number(total || 0).toFixed(2)}
+  TOTAL: S/ ${(total || 0).toFixed(2)}
 </div>
 
 </body>
