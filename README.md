@@ -1,6 +1,40 @@
 # Backend - Sistema de Cotización ZAAZMAGO
 
-## 🚀 Despliegue
+## �️ Configuración de Base de Datos (Supabase)
+
+### 1. Crear proyecto en Supabase
+1. Ve a [supabase.com](https://supabase.com) y crea una cuenta
+2. Crea un nuevo proyecto
+3. Espera a que se complete la configuración inicial
+
+### 2. Obtener la DATABASE_URL
+1. En el dashboard de Supabase, ve a **Settings** → **Database**
+2. Copia la **Connection string** (debe incluir `?sslmode=require`)
+3. La URL debería verse así:
+   ```
+   postgresql://postgres.[project-ref]:[password]@aws-0-us-east-1.pooler.supabase.com:5432/postgres?sslmode=require
+   ```
+
+### 3. Configurar Variables de Entorno
+En Render, configura estas variables:
+
+```env
+DATABASE_URL=postgresql://postgres.[tu-project-ref]:[tu-password]@aws-0-us-east-1.pooler.supabase.com:5432/postgres?sslmode=require
+```
+
+### 4. Inicializar Base de Datos
+Después del primer deploy, ejecuta en Render:
+
+```bash
+npm run setup-production
+```
+
+Este comando ejecutará automáticamente:
+- Generación del cliente Prisma
+- Migraciones de base de datos
+- Seeds iniciales (usuario admin, configuración, etc.)
+
+## �🚀 Despliegue
 
 ### Variables de Entorno Requeridas
 
@@ -26,14 +60,25 @@ PUPPETEER_EXECUTABLE_PATH=/usr/bin/chromium-browser
 ### Comandos para Producción
 
 ```bash
-# Instalar dependencias
+# Opción 1: Setup automático (recomendado)
+npm run setup-production
+
+# Opción 2: Setup manual
 npm install
-
-# Generar cliente Prisma
 npx prisma generate
-
-# Ejecutar migraciones (solo una vez)
 npx prisma migrate deploy
+npm run seed:completo
+```
+
+### Verificar Configuración
+
+```bash
+# Diagnosticar conexión a BD
+npm run diagnostico-db
+
+# Diagnosticar PDFs
+npm run diagnostico-pdf
+```
 
 # Ejecutar seeds (solo una vez, si es necesario)
 npm run seed:completo
@@ -82,6 +127,22 @@ La aplicación detecta automáticamente el entorno mediante `NODE_ENV`:
 - **Memoria insuficiente**: Aumentar el plan de Render a al menos 1GB RAM
 - **Timeout**: Los PDFs pueden tardar hasta 2 minutos en generarse
 - **Chrome no disponible**: Render puede no tener Chrome instalado en algunos planes
+
+### Problemas de Base de Datos (Supabase)
+- **"Tenant or user not found"**: Verificar que el proyecto Supabase existe y está activo
+- **"Connection refused"**: Revisar la DATABASE_URL y credenciales
+- **"Table does not exist"**: Ejecutar `npm run setup-production` para inicializar BD
+
+### Solución para problemas de BD:
+```bash
+# 1. Verificar conexión
+npm run diagnostico-db
+
+# 2. Si falla, verificar DATABASE_URL en Supabase dashboard
+
+# 3. Re-inicializar base de datos
+npm run setup-production
+```
 
 ### Problemas específicos con Puppeteer
 - **"Puppeteer launch failed"**: Verificar que Render tenga suficiente memoria (1GB+)

@@ -13,7 +13,10 @@
     "seed:all": "npm run seed:parte1 && npm run seed:parte2 && npm run seed:parte3",
     "seed:completo": "node prisma/seed-completo.js",
     "test": "echo \"Error: no test specified\" && exit 1",
-    "diagnostico-pdf": "node diagnostico-pdf.js"
+    "diagnostico-db": "node test-db.js",
+    "diagnostico-pdf": "node diagnostico-pdf.js",
+    "check-system": "node check-system.js",
+    "setup-production": "node setup-production.js"
   },
   "dependencies": {
     "@prisma/client": "^5.22.0",
