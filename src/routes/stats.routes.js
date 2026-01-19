@@ -24,4 +24,22 @@ router.get("/progreso", statsController.getProgresoMeta);
 router.post("/meta", checkRole("ADMIN"), statsController.setMetaMensual);
 router.get("/progreso/todos", checkRole("ADMIN"), statsController.getProgresoTodosVendedores);
 
+// Endpoint para ejecutar seed (solo en desarrollo/producción temporal)
+router.post("/seed", checkRole("ADMIN"), async (req, res) => {
+  try {
+    const { exec } = require('child_process');
+    exec('node prisma/seed-completo.js', (error, stdout, stderr) => {
+      if (error) {
+        console.error(`Error ejecutando seed: ${error}`);
+        return res.status(500).json({ error: 'Error ejecutando seed' });
+      }
+      console.log(`Seed ejecutado: ${stdout}`);
+      res.json({ message: 'Seed ejecutado correctamente', output: stdout });
+    });
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ error: 'Error interno' });
+  }
+});
+
 module.exports = router;
