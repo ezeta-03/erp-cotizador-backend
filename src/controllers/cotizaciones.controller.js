@@ -425,6 +425,121 @@ exports.facturarCotizacion = async (req, res) => {
 };
 
 /* =========================
+   OBTENER COTIZACIÓN ESPECÍFICA
+========================= */
+exports.obtenerCotizacion = async (req, res) => {
+  try {
+    const { id } = req.params;
+
+    let cotizacion;
+
+    // En producción, buscar en BD real
+    if (process.env.NODE_ENV === 'production') {
+      cotizacion = await prisma.cotizacion.findUnique({
+        where: { id: Number(id) },
+        include: {
+          cliente: true,
+          usuario: {
+            select: { nombre: true, role: true },
+          },
+          items: {
+            include: {
+              producto: true,
+              adicionales: { include: { adicional: true } },
+            },
+          },
+        },
+      });
+
+      if (!cotizacion) {
+        return res.status(404).json({ message: "Cotización no encontrada" });
+      }
+
+      // Validación de permisos
+      if (
+        req.user.role === "CLIENTE" &&
+        cotizacion.cliente.usuarioId !== req.user.id
+      ) {
+        return res.status(403).json({ message: "No autorizado" });
+      }
+
+      if (
+        req.user.role === "VENTAS" &&
+        cotizacion.usuarioId !== req.user.id
+      ) {
+        return res.status(403).json({ message: "No autorizado" });
+      }
+    } else {
+      // En desarrollo, usar datos ficticios
+      const cotizacionesFicticias = {
+        1: {
+          id: 1,
+          numero: "COT-2026-001",
+          total: 15000,
+          estado: "PENDIENTE",
+          createdAt: new Date("2026-01-15T10:00:00Z"),
+          cliente: { nombreComercial: "Empresa ABC SAC" },
+          usuario: { nombre: "Juan Pérez", role: "VENTAS" },
+          items: [{
+            cantidad: 10,
+            precio: 1500,
+            subtotal: 15000,
+            descripcion: "Vinil básico para fachada",
+            producto: { nombre: "Vinil Básico", servicio: "Vinil básico para fachada" },
+            adicionales: []
+          }]
+        },
+        2: {
+          id: 2,
+          numero: "COT-2026-002",
+          total: 25000,
+          estado: "APROBADA",
+          createdAt: new Date("2026-01-14T14:30:00Z"),
+          cliente: { nombreComercial: "Constructora XYZ" },
+          usuario: { nombre: "María García", role: "VENTAS" },
+          items: [{
+            cantidad: 5,
+            precio: 5000,
+            subtotal: 25000,
+            descripcion: "Letreros 3D",
+            producto: { nombre: "Letrero 3D", servicio: "Letreros 3D" },
+            adicionales: []
+          }]
+        },
+        3: {
+          id: 3,
+          numero: "COT-2026-003",
+          total: 8000,
+          estado: "FACTURADA",
+          createdAt: new Date("2026-01-13T09:15:00Z"),
+          cliente: { nombreComercial: "Tienda Local EIRL" },
+          usuario: { nombre: "Carlos López", role: "VENTAS" },
+          items: [{
+            cantidad: 2,
+            precio: 4000,
+            subtotal: 8000,
+            descripcion: "Banner publicitario",
+            producto: { nombre: "Banner Delgado", servicio: "Banner publicitario" },
+            adicionales: []
+          }]
+        }
+      };
+
+      cotizacion = cotizacionesFicticias[id];
+
+      if (!cotizacion) {
+        return res.status(404).json({ message: "Cotización no encontrada" });
+      }
+    }
+
+    res.json(cotizacion);
+  } catch (error) {
+    console.error("❌ Error obteniendo cotización:", error);
+    res.status(500).json({ message: "Error obteniendo cotización" });
+  }
+};
+
+/* =========================
    PDF
 ========================= */
 exports.generarPdf = async (req, res) => {
@@ -542,20 +657,47 @@ exports.generarPdf = async (req, res) => {
     }
 
     console.log('🔧 Iniciando Puppeteer...');
-    browser = await puppeteer.launch({
-      headless: "new", // Usar "new" en producción para mejor compatibilidad
-      args: [
-        '--no-sandbox',
-        '--disable-setuid-sandbox',
-        '--disable-dev-shm-usage',
-        '--disable-gpu',
-        '--disable-software-rasterizer',
-        '--disable-background-timer-throttling',
-        '--disable-backgrounding-occluded-windows',
-        '--disable-renderer-backgrounding',
-        '--disable-web-security',
-        '--disable-features=VizDisplayCompositor'
-    });
+    console.log('📊 Entorno:', process.env.NODE_ENV);
+    console.log('🖥️ Plataforma:', process.platform);
+
+    try {
+      browser = await puppeteer.launch({
+        headless: true,
+        args: [
+          '--no-sandbox',
+          '--disable-setuid-sandbox',
+          '--disable-dev-shm-usage',
+          '--disable-gpu',
+          '--disable-software-rasterizer',
+          '--disable-extensions',
+          '--disable-background-timer-throttling',
+          '--disable-backgrounding-occluded-windows',
+          '--disable-renderer-backgrounding',
+          '--disable-web-security',
+          '--disable-features=VizDisplayCompositor'
+        ],
+        timeout: 120000, // 2 minutos timeout
+        ignoreHTTPSErrors: true
+      });
+      console.log('✅ Puppeteer browser launched successfully');
+    } catch (puppeteerError) {
+      console.error('❌ Error launching Puppeteer:', puppeteerError.message);
+      console.error('Stack:', puppeteerError.stack);
+
+      // Intentar con configuración mínima
+      console.log('🔄 Intentando con configuración mínima...');
+      try {
+        browser = await puppeteer.launch({
+          headless: true,
+          args: ['--no-sandbox', '--disable-setuid-sandbox'],
+          timeout: 60000
+        });
+        console.log('✅ Puppeteer browser launched with minimal config');
+      } catch (minimalError) {
+        console.error('❌ Error even with minimal config:', minimalError.message);
+        throw new Error(`Puppeteer launch failed: ${puppeteerError.message}`);
+      }
+    }
 
     const page = await browser.newPage();
     console.log('📄 Página creada, configurando contenido...');
@@ -590,7 +732,9 @@ exports.generarPdf = async (req, res) => {
     }
 
     res.status(500).json({
-      message: "Error generando PDF",
+      message: "Error generando PDF"
+    });
+  }
 };
 
 // ADMIN y VENTAS: histórico de cotizaciones

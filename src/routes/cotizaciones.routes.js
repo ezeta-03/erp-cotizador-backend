@@ -19,6 +19,14 @@ router.get(
   controller.listarCotizaciones
 );
 
+// Obtener cotización específica
+router.get(
+  "/:id",
+  auth,
+  allowRoles("ADMIN", "VENTAS", "CLIENTE"),
+  controller.obtenerCotizacion
+);
+
 // 🔥 HISTÓRICO (ADMIN, VENTAS)
 router.get(
   "/historico",

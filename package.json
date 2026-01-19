@@ -12,7 +12,8 @@
     "seed:parte3": "node prisma/seed-parte3.js",
     "seed:all": "npm run seed:parte1 && npm run seed:parte2 && npm run seed:parte3",
     "seed:completo": "node prisma/seed-completo.js",
-    "test": "echo \"Error: no test specified\" && exit 1"
+    "test": "echo \"Error: no test specified\" && exit 1",
+    "diagnostico-pdf": "node diagnostico-pdf.js"
   },
   "dependencies": {
     "@prisma/client": "^5.22.0",

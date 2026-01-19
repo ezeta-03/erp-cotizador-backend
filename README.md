@@ -17,6 +17,10 @@ MAIL_PASS=tu_app_password
 MAIL_FROM="Sistema de Cotización ZAAZMAGO"
 FRONTEND_URL=https://tu-frontend.vercel.app
 NODE_ENV=production
+
+# Configuración específica para Puppeteer en Render
+PUPPETEER_SKIP_CHROMIUM_DOWNLOAD=true
+PUPPETEER_EXECUTABLE_PATH=/usr/bin/chromium-browser
 ```
 
 ### Comandos para Producción
@@ -71,7 +75,30 @@ La aplicación detecta automáticamente el entorno mediante `NODE_ENV`:
 ### PDF no se genera
 1. Verificar que Puppeteer esté instalado: `npm list puppeteer`
 2. Revisar logs del servidor para errores de Puppeteer
-3. En producción, verificar que el contenedor tenga acceso a Chrome
+3. En producción (Render), verificar que el servicio tenga suficiente memoria (al menos 1GB)
+4. Si falla, el error será específico: "Puppeteer launch failed"
+
+### Problemas comunes en Render
+- **Memoria insuficiente**: Aumentar el plan de Render a al menos 1GB RAM
+- **Timeout**: Los PDFs pueden tardar hasta 2 minutos en generarse
+- **Chrome no disponible**: Render puede no tener Chrome instalado en algunos planes
+
+### Problemas específicos con Puppeteer
+- **"Puppeteer launch failed"**: Verificar que Render tenga suficiente memoria (1GB+)
+- **"Browser closed unexpectedly"**: Problema de memoria o configuración de sandbox
+- **Timeout en generación**: Los PDFs complejos pueden tardar más de 30 segundos
+
+### Variables de entorno para Puppeteer
+```env
+PUPPETEER_SKIP_CHROMIUM_DOWNLOAD=true
+PUPPETEER_EXECUTABLE_PATH=/usr/bin/chromium-browser
+```
+
+### Solución alternativa
+Si Puppeteer sigue fallando, considerar:
+1. Usar un servicio externo de PDF (como Puppeteer Cloud o similar)
+2. Generar PDFs en el frontend usando bibliotecas como jsPDF
+3. Usar un servicio de hosting que soporte Puppeteer (como Railway o DigitalOcean)
 
 ### Base de datos no conecta
 1. Verificar DATABASE_URL en variables de entorno
