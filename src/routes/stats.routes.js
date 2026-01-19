@@ -22,6 +22,6 @@ router.get("/progreso", statsController.getProgresoMeta);
 
 // Solo ADMIN
 router.post("/meta", checkRole("ADMIN"), statsController.setMetaMensual);
-router.get("/progreso/todos", checkRole("ADMIN"), statsController.getProgresoTodosVendedores);
+router.get("/progreso/todos", statsController.getProgresoTodosVendedores);
 
 module.exports = router;

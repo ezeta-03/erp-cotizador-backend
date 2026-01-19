@@ -24,8 +24,8 @@ exports.getEstadisticasCotizaciones = async (req, res) => {
 // Obtener cotizaciones por día del mes actual
 exports.getCotizacionesPorDia = async (req, res) => {
   try {
-    const { role, id: userId } = req.user;
-    
+    console.log('📊 Llamando getCotizacionesPorDia para user:', req.user);
+
     // Datos ficticios para desarrollo
     const datosFicticios = [
       { dia: 1, enviadas: 2, aprobadas: 1, totalEnviadas: 15000, totalAprobadas: 8000 },
@@ -49,6 +49,7 @@ exports.getCotizacionesPorDia = async (req, res) => {
       { dia: 19, enviadas: 1, aprobadas: 1, totalEnviadas: 13000, totalAprobadas: 13000 }
     ];
 
+    console.log('📊 Enviando cotizaciones por día, cantidad:', datosFicticios.length);
     res.json(datosFicticios);
   } catch (error) {
     console.error(error);
@@ -160,11 +161,7 @@ exports.getProgresoMeta = async (req, res) => {
 // Obtener todos los vendedores con sus progresos (solo ADMIN)
 exports.getProgresoTodosVendedores = async (req, res) => {
   try {
-    const { role } = req.user;
-
-    if (role !== "ADMIN") {
-      return res.status(403).json({ error: "No autorizado" });
-    }
+    console.log('📊 Llamando getProgresoTodosVendedores para user:', req.user);
 
     // Datos ficticios para desarrollo
     const datosFicticios = {
@@ -201,6 +198,7 @@ exports.getProgresoTodosVendedores = async (req, res) => {
       }
     };
 
+    console.log('📊 Enviando datos:', datosFicticios);
     res.json(datosFicticios);
   } catch (error) {
     console.error(error);
