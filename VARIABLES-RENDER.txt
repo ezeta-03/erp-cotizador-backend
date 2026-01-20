@@ -1,0 +1,14 @@
+# 🚨 VARIABLES PARA COPIAR EN RENDER
+
+Copia y pega estas líneas EXACTAMENTE en Render (Settings → Environment):
+
+DATABASE_URL=postgresql://postgres.qlqbhyfzdzlfwsqysveb:Dulc34lm3ndr4m1$@aws-0-us-west-2.pooler.supabase.com:5432/postgres
+JWT_SECRET=cotizaciones_mvp_zaazmago_2025_super_secreto
+NODE_ENV=production
+PORT=4000
+FRONTEND_URL=https://erp-cotizador-frontend.vercel.app
+MAIL_HOST=smtp.gmail.com
+MAIL_PORT=587
+MAIL_USER=academiazenteno@gmail.com
+MAIL_PASS=ododvsolyktfffra
+MAIL_FROM=Sistema de Cotización ZAAZMAGO
