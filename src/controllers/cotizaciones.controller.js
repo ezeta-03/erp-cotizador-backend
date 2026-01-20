@@ -663,19 +663,7 @@ exports.generarPdf = async (req, res) => {
     try {
       browser = await puppeteer.launch({
         headless: true,
-        args: [
-          '--no-sandbox',
-          '--disable-setuid-sandbox',
-          '--disable-dev-shm-usage',
-          '--disable-gpu',
-          '--disable-software-rasterizer',
-          '--disable-extensions',
-          '--disable-background-timer-throttling',
-          '--disable-backgrounding-occluded-windows',
-          '--disable-renderer-backgrounding',
-          '--disable-web-security',
-          '--disable-features=VizDisplayCompositor'
-        ],
+        args: ['--no-sandbox', '--disable-setuid-sandbox'],
         timeout: 120000, // 2 minutos timeout
         ignoreHTTPSErrors: true
       });
@@ -683,20 +671,7 @@ exports.generarPdf = async (req, res) => {
     } catch (puppeteerError) {
       console.error('❌ Error launching Puppeteer:', puppeteerError.message);
       console.error('Stack:', puppeteerError.stack);
-
-      // Intentar con configuración mínima
-      console.log('🔄 Intentando con configuración mínima...');
-      try {
-        browser = await puppeteer.launch({
-          headless: true,
-          args: ['--no-sandbox', '--disable-setuid-sandbox'],
-          timeout: 60000
-        });
-        console.log('✅ Puppeteer browser launched with minimal config');
-      } catch (minimalError) {
-        console.error('❌ Error even with minimal config:', minimalError.message);
-        throw new Error(`Puppeteer launch failed: ${puppeteerError.message}`);
-      }
+      throw new Error(`Puppeteer launch failed: ${puppeteerError.message}`);
     }
 
     const page = await browser.newPage();
@@ -708,9 +683,23 @@ exports.generarPdf = async (req, res) => {
 
     const pdf = await page.pdf({ format: "A4", printBackground: true });
     console.log('✅ PDF generado exitosamente, tamaño:', pdf.length, 'bytes');
+    console.log('📄 Tipo de pdf:', typeof pdf);
+    console.log('📄 Es Buffer:', Buffer.isBuffer(pdf));
+    console.log('📄 Primeros 10 bytes:', pdf.slice(0, 10).toString('hex'));
 
     await browser.close();
     browser = null;
+
+    // Verificar que el PDF sea válido
+    if (!Buffer.isBuffer(pdf) || pdf.length === 0) {
+      throw new Error('PDF generado no es un buffer válido');
+    }
+
+    const pdfHeader = pdf.slice(0, 5).toString();
+    if (!pdfHeader.startsWith('%PDF-')) {
+      console.error('❌ PDF generado no tiene cabecera válida:', pdfHeader);
+      throw new Error('PDF generado está corrupto');
+    }
 
     res.set({
       "Content-Type": "application/pdf",
