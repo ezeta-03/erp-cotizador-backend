@@ -169,14 +169,21 @@ exports.invitarCliente = async (req, res) => {
       },
     });
 
-    // Enviar correo de activación
-    await sendActivationEmail({
-      to: email,
-      name: cliente.nombreComercial,
-      token,
-    });
-
+    // Responder inmediatamente para evitar timeout
     res.json({ message: "Invitación enviada correctamente" });
+
+    // Enviar correo de activación de forma asíncrona
+    try {
+      await sendActivationEmail({
+        to: email,
+        name: cliente.nombreComercial,
+        token,
+      });
+      console.log(`📧 Correo de invitación enviado a ${email}`);
+    } catch (mailError) {
+      console.error("❌ ERROR ENVIANDO CORREO DE INVITACIÓN:", mailError);
+      // No fallar la invitación si el correo falla
+    }
   } catch (error) {
     console.error("❌ ERROR INVITAR CLIENTE:", error);
     res

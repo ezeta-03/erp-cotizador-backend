@@ -202,14 +202,20 @@ exports.reinvitar = async (req, res) => {
       },
     });
 
-    // Enviar correo
-    await sendActivationEmail({
-      to: email,
-      name: usuario.nombreComercial || usuario.nombre,
-      token,
-    });
-
+    // Responder inmediatamente
     res.json({ message: "Invitación reenviada correctamente" });
+
+    // Enviar correo de forma asíncrona
+    try {
+      await sendActivationEmail({
+        to: email,
+        name: usuario.nombreComercial || usuario.nombre,
+        token,
+      });
+      console.log(`📧 Correo de reinvitación enviado a ${email}`);
+    } catch (mailError) {
+      console.error("❌ ERROR ENVIANDO CORREO DE REINVITACIÓN:", mailError);
+    }
   } catch (error) {
     console.error("❌ Error reinvitando usuario:", error);
     res.status(500).json({ message: "Error reinvitando usuario", error });
