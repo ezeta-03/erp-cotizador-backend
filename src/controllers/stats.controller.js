@@ -8,7 +8,7 @@ exports.getEstadisticasCotizaciones = async (req, res) => {
 
     // Filtro según rol
     const whereClause = role === "VENTAS" 
-      ? { vendedorId: userId }
+      ? { usuarioId: userId } // 🔥 CAMBIO: vendedorId → usuarioId
       : {};
 
     // Agrupar cotizaciones por estado
@@ -60,7 +60,7 @@ exports.getCotizacionesPorDia = async (req, res) => {
         gte: primerDia,
         lte: ultimoDia,
       },
-      ...(role === "VENTAS" ? { vendedorId: userId } : {}),
+      ...(role === "VENTAS" ? { usuarioId: userId } : {}), // 🔥 CAMBIO
     };
 
     // Obtener todas las cotizaciones del mes
@@ -118,8 +118,6 @@ exports.getMetaMensual = async (req, res) => {
     const { role, id: userId } = req.user;
     const { vendedorId } = req.query;
 
-    // Si es ADMIN y pasa vendedorId, obtener meta de ese vendedor
-    // Si es VENTAS, obtener su propia meta
     const targetUserId = role === "ADMIN" && vendedorId ? parseInt(vendedorId) : userId;
 
     const now = new Date();
@@ -136,7 +134,6 @@ exports.getMetaMensual = async (req, res) => {
       },
     });
 
-    // Si no existe meta, retornar 0
     if (!meta) {
       return res.json({ monto: 0, mes, anio });
     }
@@ -222,7 +219,7 @@ exports.getProgresoMeta = async (req, res) => {
 
     const cotizacionesFacturadas = await prisma.cotizacion.findMany({
       where: {
-        vendedorId: targetUserId,
+        usuarioId: targetUserId, // 🔥 CAMBIO
         estado: "FACTURADA",
         createdAt: {
           gte: primerDia,
@@ -272,6 +269,8 @@ exports.getProgresoTodosVendedores = async (req, res) => {
       },
     });
 
+    console.log('✅ Vendedores encontrados:', vendedores.length);
+
     // Obtener primer y último día del mes
     const primerDia = new Date(anio, mes - 1, 1);
     const ultimoDia = new Date(anio, mes, 0);
@@ -295,7 +294,7 @@ exports.getProgresoTodosVendedores = async (req, res) => {
         // Obtener cotizaciones facturadas
         const cotizacionesFacturadas = await prisma.cotizacion.findMany({
           where: {
-            vendedorId: vendedor.id,
+            usuarioId: vendedor.id, // 🔥 CAMBIO: vendedorId → usuarioId
             estado: "FACTURADA",
             createdAt: {
               gte: primerDia,
@@ -335,10 +334,10 @@ exports.getProgresoTodosVendedores = async (req, res) => {
       },
     };
 
-    console.log('✅ Progreso calculado:', resultado);
+    console.log('✅ Progreso calculado para', vendedoresConProgreso.length, 'vendedores');
     res.json(resultado);
   } catch (error) {
-    console.error("Error en getProgresoTodosVendedores:", error);
+    console.error("❌ Error en getProgresoTodosVendedores:", error);
     res.status(500).json({ error: "Error al obtener progresos" });
   }
 };
