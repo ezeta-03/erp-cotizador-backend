@@ -173,27 +173,34 @@ exports.invitarCliente = async (req, res) => {
     res.json({ message: "Invitación enviada correctamente" });
 
     // Enviar correo de activación de forma asíncrona
-  try {
-  await sendActivationEmail({
-    to: email,
-    name: cliente.nombreComercial,
-    token,
-  });
-  console.log(`✅ Invitación enviada exitosamente a ${email}`);
-  res.json({ message: "Invitación enviada correctamente" });
-} catch (mailError) {
-  console.error("❌ ERROR ENVIANDO CORREO:", mailError);
-  
-  // Si SendGrid da un error específico
-  if (mailError.response) {
-    console.error("Detalles SendGrid:", mailError.response.body);
+    try {
+      await sendActivationEmail({
+        to: email,
+        name: cliente.nombreComercial,
+        token,
+      });
+      console.log(`📧 Correo de invitación enviado a ${email}`);
+      res.json({ message: "Invitación enviada correctamente" });
+    } catch (mailError) {
+      console.error("❌ ERROR ENVIANDO CORREO DE INVITACIÓN:", mailError);
+      // No fallar la invitación si el correo falla
+
+      // Si SendGrid da un error específico
+      if (mailError.response) {
+        console.error("Detalles SendGrid:", mailError.response.body);
+      }
+      res.status(500).json({
+        message: "Error enviando el correo de invitación",
+        error: mailError.message,
+      });
+    }
+  } catch (error) {
+    console.error("❌ ERROR INVITAR CLIENTE:", error);
+    res
+      .status(500)
+      .json({ message: "Error invitando cliente", error: error.message });
   }
-  
-  res.status(500).json({ 
-    message: "Error enviando el correo de invitación", 
-    error: mailError.message 
-  });
-}
+};
 
 // ===============================
 // 📊 Actividad de clientes (análisis)
@@ -240,8 +247,8 @@ exports.actividadClientes = async (req, res) => {
     const filtradas = producto
       ? cotizaciones.filter((c) =>
           c.items.some((i) =>
-            i.producto.material.toLowerCase().includes(producto.toLowerCase())
-          )
+            i.producto.material.toLowerCase().includes(producto.toLowerCase()),
+          ),
         )
       : cotizaciones;
 
