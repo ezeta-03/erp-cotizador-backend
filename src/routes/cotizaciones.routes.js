@@ -3,6 +3,26 @@ const auth = require("../middlewares/auth.middleware");
 const allowRoles = require("../middlewares/role.middleware");
 const controller = require("../controllers/cotizaciones.controller");
 
+// ✅ RUTAS ESPECÍFICAS PRIMERO
+
+// Cliente: ver última cotización
+router.get(
+  "/mia",  // ← Esta debe ir ANTES de /:id
+  auth,
+  allowRoles("CLIENTE"),
+  controller.ultimaCotizacionCliente
+);
+
+// 🔥 HISTÓRICO (ADMIN, VENTAS)
+router.get(
+  "/historico",  // ← Esta también debe ir ANTES de /:id
+  auth,
+  allowRoles("ADMIN", "VENTAS"),
+  controller.historicoCotizaciones
+);
+
+// ✅ RUTAS GENÉRICAS DESPUÉS
+
 // Crear cotización
 router.post(
   "/",
@@ -19,28 +39,12 @@ router.get(
   controller.listarCotizaciones
 );
 
-// Obtener cotización específica
+// Obtener cotización específica (ahora SÍ puede estar aquí)
 router.get(
-  "/:id",
+  "/:id",  // ← Esta va DESPUÉS de las rutas específicas
   auth,
   allowRoles("ADMIN", "VENTAS", "CLIENTE"),
   controller.obtenerCotizacion
-);
-
-// 🔥 HISTÓRICO (ADMIN, VENTAS)
-router.get(
-  "/historico",
-  auth,
-  allowRoles("ADMIN", "VENTAS"),
-  controller.historicoCotizaciones
-);
-
-// Cliente: ver última cotización
-router.get(
-  "/mia",
-  auth,
-  allowRoles("CLIENTE"),
-  controller.ultimaCotizacionCliente
 );
 
 // Cliente: aceptar / rechazar cotización
