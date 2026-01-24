@@ -131,6 +131,7 @@ enum Rol {
   ADMIN
   VENTAS
   CLIENTE
+  CONTABLE
 }
 
 enum EstadoCotizacion {
