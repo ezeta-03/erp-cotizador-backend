@@ -403,7 +403,7 @@ exports.facturarCotizacion = async (req, res) => {
     const usuario = await prisma.usuario.findUnique({
       where: { id: req.user.id },
     });
-    if (usuario?.role !== "VENTAS" && usuario?.role !== "ADMIN") {
+    if (usuario?.role !== "VENTAS" && usuario?.role !== "ADMIN" && usuario?.role !== "CONTABLE") {
       return res.status(403).json({ message: "No autorizado para facturar" });
     }
 

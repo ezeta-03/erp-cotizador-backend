@@ -35,7 +35,7 @@ router.post(
 router.get(
   "/",
   auth,
-  allowRoles("ADMIN", "VENTAS"),
+  allowRoles("ADMIN", "VENTAS", "CONTABLE"),
   controller.listarCotizaciones
 );
 
@@ -59,7 +59,7 @@ router.post(
 router.post(
   "/:id/facturar",
   auth,
-  allowRoles("ADMIN", "VENTAS"),
+  allowRoles("ADMIN", "VENTAS", "CONTABLE"),
   controller.facturarCotizacion
 );
 
