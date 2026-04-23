@@ -6,13 +6,21 @@ const productosController = require("../controllers/productos.controller");
 
 const upload = multer({ storage: multer.memoryStorage() });
 
-// Importar desde CSV (antes de las rutas con :id)
+// Importar desde CSV
 router.post(
   "/importar-csv",
   auth,
   allowRoles("ADMIN"),
   upload.single("archivo"),
   productosController.importarCSV
+);
+
+// Eliminar TODOS los productos (soft-delete masivo)
+router.delete(
+  "/todos",
+  auth,
+  allowRoles("ADMIN"),
+  productosController.eliminarTodos
 );
 
 // Crear producto

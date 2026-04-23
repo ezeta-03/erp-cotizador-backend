@@ -1,76 +1,18 @@
-// backend/src/controllers/productos.controller.js
 const prisma = require("../config/prisma");
 const XLSX = require("xlsx");
 
-// Función helper para calcular precios
-function calcularPrecios(costoMaterial) {
-  const costoParcial1 = costoMaterial * 1.1; // +10%
-  const costoParcial2 = costoParcial1 * 1.17; // +17%
-  const precioFinal = costoParcial2 * 1.2; // +20%
-  const margen = precioFinal * 0.2; // 20% del precio final
-
-  return {
-    costo_parcial_1: parseFloat(costoParcial1.toFixed(2)),
-    costo_parcial_2: parseFloat(costoParcial2.toFixed(2)),
-    precio_final: parseFloat(precioFinal.toFixed(2)),
-    margen: parseFloat(margen.toFixed(2)),
-  };
-}
-
-// Crear producto
-exports.crear = async (req, res) => {
-  try {
-    const {
-      categoria,
-      servicio,
-      material,
-      unidad,
-      costo_material,
-      adicionales,
-    } = req.body;
-    const producto = await prisma.producto.create({
-      data: {
-        categoria,
-        servicio,
-        material,
-        unidad,
-        costo_material: Number(costo_material),
-        costo_parcial_1: Number(costo_material) * 1.1,
-        costo_parcial_2: Number(costo_material) * 1.17,
-        precio_final: Number(costo_material) * 1.2,
-        margen: Number(costo_material) * 0.2,
-        adicionales: adicionales
-          ? {
-              create: adicionales.map((a) => ({
-                nombre: a.nombre,
-                precio: Number(a.precio),
-              })),
-            }
-          : undefined,
-      },
-    });
-    res.json(producto);
-  } catch (error) {
-    console.error("❌ Error creando producto:", error);
-    res.status(500).json({ message: "Error creando producto" });
-  }
-};
-
-// Listar productos
+// ── Listar productos (solo activos por defecto) ───────────────────────────────
 exports.listar = async (req, res) => {
   try {
-    const { activo, categoria } = req.query;
+    const { activo = "true", categoria } = req.query;
 
-    const where = {};
-    if (activo !== undefined) where.activo = activo === "true";
+    const where = { activo: activo === "true" };
     if (categoria) where.categoria = categoria;
 
     const productos = await prisma.producto.findMany({
       where,
-      orderBy: { id: "asc" },
-      include: {
-        adicionales: true, // 👈 ahora sí trae los adicionales
-      },
+      orderBy: { nombre: "asc" },
+      include: { adicionales: true },
     });
 
     res.json(productos);
@@ -80,39 +22,62 @@ exports.listar = async (req, res) => {
   }
 };
 
-// Actualizar producto
+// ── Crear producto ────────────────────────────────────────────────────────────
+exports.crear = async (req, res) => {
+  try {
+    const { categoria, servicio, material, unidad, costo_material, adicionales } = req.body;
 
+    if (!categoria || !servicio || costo_material === undefined) {
+      return res.status(400).json({ message: "Faltan campos requeridos: categoria, servicio, costo_material" });
+    }
+
+    const costo = Number(costo_material);
+    const producto = await prisma.producto.create({
+      data: {
+        categoria,
+        servicio,
+        nombre: servicio,
+        material: material || null,
+        unidad: unidad || null,
+        costo_material: costo,
+        costo_parcial_1: parseFloat((costo * 1.1).toFixed(2)),
+        costo_parcial_2: parseFloat((costo * 1.1 * 1.17).toFixed(2)),
+        precio_final: parseFloat((costo * 1.1 * 1.17 * 1.2).toFixed(2)),
+        margen: parseFloat((costo * 1.1 * 1.17 * 1.2 * 0.2).toFixed(2)),
+        adicionales: adicionales?.length
+          ? { create: adicionales.map((a) => ({ nombre: a.nombre, precio: Number(a.precio) })) }
+          : undefined,
+      },
+    });
+    res.status(201).json(producto);
+  } catch (error) {
+    console.error("❌ Error creando producto:", error);
+    res.status(500).json({ message: "Error creando producto" });
+  }
+};
+
+// ── Actualizar producto ───────────────────────────────────────────────────────
 exports.actualizar = async (req, res) => {
   try {
     const id = parseInt(req.params.id, 10);
-    const {
-      categoria,
-      servicio,
-      material,
-      unidad,
-      costo_material,
-      adicionales,
-    } = req.body;
+    const { categoria, servicio, material, unidad, costo_material, adicionales } = req.body;
+
+    const costo = Number(costo_material);
     const producto = await prisma.producto.update({
       where: { id },
       data: {
         categoria,
         servicio,
-        material,
-        unidad,
-        costo_material: Number(costo_material),
-        costo_parcial_1: Number(costo_material) * 1.1,
-        costo_parcial_2: Number(costo_material) * 1.17,
-        precio_final: Number(costo_material) * 1.2,
-        margen: Number(costo_material) * 0.2,
+        nombre: servicio,
+        material: material || null,
+        unidad: unidad || null,
+        costo_material: costo,
+        costo_parcial_1: parseFloat((costo * 1.1).toFixed(2)),
+        costo_parcial_2: parseFloat((costo * 1.1 * 1.17).toFixed(2)),
+        precio_final: parseFloat((costo * 1.1 * 1.17 * 1.2).toFixed(2)),
+        margen: parseFloat((costo * 1.1 * 1.17 * 1.2 * 0.2).toFixed(2)),
         adicionales: adicionales
-          ? {
-              deleteMany: {},
-              create: adicionales.map((a) => ({
-                nombre: a.nombre,
-                precio: Number(a.precio),
-              })),
-            }
+          ? { deleteMany: {}, create: adicionales.map((a) => ({ nombre: a.nombre, precio: Number(a.precio) })) }
           : undefined,
       },
     });
@@ -123,23 +88,30 @@ exports.actualizar = async (req, res) => {
   }
 };
 
-// Eliminar producto (soft delete)
+// ── Eliminar un producto (soft delete) ───────────────────────────────────────
 exports.eliminar = async (req, res) => {
   try {
-    const { id } = req.params;
-
-    await prisma.producto.update({
-      where: { id: Number(id) },
-      data: { activo: false },
-    });
-
+    const id = parseInt(req.params.id, 10);
+    await prisma.producto.update({ where: { id }, data: { activo: false } });
     res.json({ message: "Producto desactivado" });
   } catch (error) {
-    res.status(500).json({ message: "Error al eliminar producto" });
+    console.error("❌ Error al desactivar producto:", error);
+    res.status(500).json({ message: "Error al desactivar producto" });
   }
 };
 
-// Importar productos desde CSV (formato: Producto;Precio de Produccion)
+// ── Eliminar TODOS los productos (soft delete masivo) ────────────────────────
+exports.eliminarTodos = async (req, res) => {
+  try {
+    const { count } = await prisma.producto.updateMany({ data: { activo: false } });
+    res.json({ message: `${count} producto(s) desactivado(s)`, count });
+  } catch (error) {
+    console.error("❌ Error al eliminar todos los productos:", error);
+    res.status(500).json({ message: "Error al eliminar productos" });
+  }
+};
+
+// ── Importar desde CSV (Producto;Precio de Produccion) ───────────────────────
 exports.importarCSV = async (req, res) => {
   try {
     if (!req.file) {
@@ -156,37 +128,23 @@ exports.importarCSV = async (req, res) => {
       return res.status(400).json({ message: "El archivo está vacío o sin datos" });
     }
 
-    // Ignorar la primera línea (cabecera)
-    const filasDatos = lineas.slice(1);
-
+    const filasDatos = lineas.slice(1); // saltar cabecera
     const resultados = { creados: 0, actualizados: 0, omitidos: 0, errores: [], total: filasDatos.length };
 
-    // Marcar todos los productos activos como inactivos (reemplazo total)
+    // Soft-delete masivo antes de importar (reemplazo total)
     await prisma.producto.updateMany({ where: { activo: true }, data: { activo: false } });
 
     for (let i = 0; i < filasDatos.length; i++) {
       const fila = filasDatos[i];
       const partes = fila.split(";");
 
-      if (partes.length < 2) {
-        resultados.omitidos++;
-        continue;
-      }
+      if (partes.length < 2) { resultados.omitidos++; continue; }
 
       const nombre = partes[0].trim();
       const precioRaw = partes[1].trim();
 
-      if (!nombre) {
-        resultados.omitidos++;
-        continue;
-      }
-
-      // Parsear precio: "S/ 9.00" → 9.00
-      if (!precioRaw) {
-        // Precio vacío → omitir silenciosamente
-        resultados.omitidos++;
-        continue;
-      }
+      if (!nombre) { resultados.omitidos++; continue; }
+      if (!precioRaw) { resultados.omitidos++; continue; }
 
       const precioStr = precioRaw.replace(/S\/\s*/i, "").replace(",", ".").trim();
       const precio = parseFloat(precioStr);
@@ -196,7 +154,7 @@ exports.importarCSV = async (req, res) => {
         continue;
       }
 
-      // Categoría derivada: primera palabra en mayúsculas del nombre
+      // Categoría: primera palabra del nombre
       const categoria = nombre.split(/\s+/)[0].toUpperCase().replace(/[^A-ZÁÉÍÓÚÑ]/gi, "") || "GENERAL";
 
       try {
@@ -205,31 +163,12 @@ exports.importarCSV = async (req, res) => {
         if (existente) {
           await prisma.producto.update({
             where: { id: existente.id },
-            data: {
-              servicio: nombre,
-              categoria,
-              precio_final: precio,
-              costo_material: precio,
-              costo_parcial_1: precio,
-              costo_parcial_2: precio,
-              margen: 0,
-              activo: true,
-            },
+            data: { servicio: nombre, categoria, precio_final: precio, costo_material: precio, costo_parcial_1: precio, costo_parcial_2: precio, margen: 0, activo: true },
           });
           resultados.actualizados++;
         } else {
           await prisma.producto.create({
-            data: {
-              nombre,
-              servicio: nombre,
-              categoria,
-              precio_final: precio,
-              costo_material: precio,
-              costo_parcial_1: precio,
-              costo_parcial_2: precio,
-              margen: 0,
-              activo: true,
-            },
+            data: { nombre, servicio: nombre, categoria, precio_final: precio, costo_material: precio, costo_parcial_1: precio, costo_parcial_2: precio, margen: 0, activo: true },
           });
           resultados.creados++;
         }
@@ -245,117 +184,7 @@ exports.importarCSV = async (req, res) => {
   }
 };
 
-// Importar productos desde Excel
-exports.importarExcel = async (req, res) => {
-  try {
-    if (!req.file) {
-      return res.status(400).json({ message: "No se envió ningún archivo" });
-    }
-
-    const workbook = XLSX.read(req.file.buffer, { type: "buffer" });
-    const sheetName = workbook.SheetNames[0];
-    const sheet = workbook.Sheets[sheetName];
-    const data = XLSX.utils.sheet_to_json(sheet);
-
-    if (data.length === 0) {
-      return res.status(400).json({ message: "El archivo está vacío" });
-    }
-
-    const resultados = {
-      creados: 0,
-      actualizados: 0,
-      errores: [],
-      total: data.length,
-    };
-
-    for (let i = 0; i < data.length; i++) {
-      const fila = data[i];
-
-      try {
-        const categoria =
-          fila["Categoria"] || fila["Categoría"] || fila["CATEGORIA"];
-        const servicio = fila["Servicio"] || fila["SERVICIO"];
-        const capacidad_productiva =
-          fila["Capacidad Productiva"] || fila["CAPACIDAD PRODUCTIVA"] || null;
-        const unidad = fila["Unidad"] || fila["UNIDAD"] || null;
-        const valor_unitario =
-          fila["Valor Unitario"] || fila["VALOR UNITARIO"] || null;
-        const costo_material = Number(
-          fila["Costo Material"] ||
-            fila["COSTO MATERIAL"] ||
-            fila["Material"] ||
-            0
-        );
-
-        if (!categoria || !servicio) {
-          resultados.errores.push({
-            fila: i + 2,
-            error: "Faltan campos requeridos (Categoria, Servicio)",
-          });
-          continue;
-        }
-
-        const precios = calcularPrecios(costo_material);
-
-        // Buscar si existe producto similar
-        const existente = await prisma.producto.findFirst({
-          where: {
-            categoria,
-            servicio,
-            capacidad_productiva,
-          },
-        });
-
-        if (existente) {
-          await prisma.producto.update({
-            where: { id: existente.id },
-            data: {
-              costo_material,
-              unidad,
-              valor_unitario,
-              ...precios,
-              nombre: servicio,
-              precio_material: costo_material,
-              activo: true,
-            },
-          });
-          resultados.actualizados++;
-        } else {
-          await prisma.producto.create({
-            data: {
-              categoria,
-              servicio,
-              capacidad_productiva,
-              unidad,
-              valor_unitario,
-              costo_material,
-              ...precios,
-              nombre: servicio,
-              precio_material: costo_material,
-              precio_mano_obra: 0,
-              activo: true,
-            },
-          });
-          resultados.creados++;
-        }
-      } catch (error) {
-        resultados.errores.push({ fila: i + 2, error: error.message });
-      }
-    }
-
-    res.json({
-      message: "Importación completada",
-      ...resultados,
-    });
-  } catch (error) {
-    console.error("Error al importar Excel:", error);
-    res
-      .status(500)
-      .json({ message: "Error al importar archivo", error: error.message });
-  }
-};
-
-// Exportar productos a Excel
+// ── Exportar productos a Excel ────────────────────────────────────────────────
 exports.exportarExcel = async (req, res) => {
   try {
     const { tipo } = req.query;
@@ -363,52 +192,25 @@ exports.exportarExcel = async (req, res) => {
     let data = [];
 
     if (tipo === "plantilla") {
-      data = [
-        {
-          Categoria: "IMPRESIONES",
-          Servicio: "Ejemplo Servicio",
-          "Capacidad Productiva": "1 unidad de ejemplo",
-          Unidad: "und",
-          "Valor Unitario": 0,
-          "Costo Material": 100,
-        },
-      ];
+      data = [{ Producto: "BANNER DELGADO 10 ONZAS", "Precio de Produccion": "S/ 9.00" }];
     } else {
       const productos = await prisma.producto.findMany({
         where: { activo: true },
-        orderBy: { id: "asc" },
+        orderBy: { nombre: "asc" },
       });
-
       data = productos.map((p) => ({
-        Categoria: p.categoria,
-        Servicio: p.servicio,
-        "Capacidad Productiva": p.capacidad_productiva || "",
-        Unidad: p.unidad || "",
-        "Valor Unitario": p.valor_unitario || 0,
-        "Costo Material": p.costo_material,
-        "Costo Parcial 1": p.costo_parcial_1,
-        "Costo Parcial 2": p.costo_parcial_2,
-        "Precio Final": p.precio_final,
-        Margen: p.margen,
+        Producto: p.nombre || p.servicio,
+        "Precio de Produccion": `S/ ${p.precio_final.toFixed(2)}`,
       }));
     }
 
     const ws = XLSX.utils.json_to_sheet(data);
     const wb = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(wb, ws, "Productos");
-
     const buffer = XLSX.write(wb, { type: "buffer", bookType: "xlsx" });
 
-    res.setHeader(
-      "Content-Disposition",
-      `attachment; filename=productos_${
-        tipo === "plantilla" ? "plantilla" : Date.now()
-      }.xlsx`
-    );
-    res.setHeader(
-      "Content-Type",
-      "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-    );
+    res.setHeader("Content-Disposition", `attachment; filename=productos_${tipo === "plantilla" ? "plantilla" : Date.now()}.xlsx`);
+    res.setHeader("Content-Type", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
     res.send(buffer);
   } catch (error) {
     console.error("Error al exportar Excel:", error);
