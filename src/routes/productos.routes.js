@@ -6,6 +6,15 @@ const productosController = require("../controllers/productos.controller");
 
 const upload = multer({ storage: multer.memoryStorage() });
 
+// Preview del CSV (sin escritura)
+router.post(
+  "/preview-csv",
+  auth,
+  allowRoles("ADMIN"),
+  upload.single("archivo"),
+  productosController.previewCSV
+);
+
 // Importar desde CSV
 router.post(
   "/importar-csv",

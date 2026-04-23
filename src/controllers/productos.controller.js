@@ -111,73 +111,157 @@ exports.eliminarTodos = async (req, res) => {
   }
 };
 
-// ── Importar desde CSV (Producto;Precio de Produccion) ───────────────────────
+// ── Parsear líneas del CSV → array de {nombre, precio} ───────────────────────
+function parseLineasCSV(buffer) {
+  // Soporta UTF-8 con/sin BOM y Latin-1 (Excel Windows)
+  let texto = buffer.toString("utf-8");
+  if (texto.charCodeAt(0) === 0xfeff) texto = texto.slice(1); // strip BOM
+
+  const lineas = texto.split(/\r?\n/).map((l) => l.trim()).filter(Boolean);
+  if (lineas.length < 2) return { filas: [], error: "Archivo vacío o sin datos" };
+
+  const filas = [];
+  lineas.slice(1).forEach((linea, i) => {
+    const partes = linea.split(";");
+    const nombre = partes[0]?.trim() ?? "";
+    const precioRaw = partes[1]?.trim() ?? "";
+
+    if (!nombre || !precioRaw) {
+      filas.push({ fila: i + 2, nombre, precio: null, estado: "omitido", motivo: !nombre ? "Nombre vacío" : "Sin precio" });
+      return;
+    }
+
+    const precioStr = precioRaw.replace(/S\/\s*/i, "").replace(",", ".").trim();
+    const precio = parseFloat(precioStr);
+
+    if (isNaN(precio)) {
+      filas.push({ fila: i + 2, nombre, precio: null, estado: "error", motivo: `Precio inválido: "${precioRaw}"` });
+    } else {
+      filas.push({ fila: i + 2, nombre, precio, estado: "valido" });
+    }
+  });
+
+  return { filas, error: null };
+}
+
+// ── Preview del CSV (sin escritura en BD) ─────────────────────────────────────
+exports.previewCSV = async (req, res) => {
+  try {
+    if (!req.file) return res.status(400).json({ message: "No se envió ningún archivo" });
+
+    const { filas, error } = parseLineasCSV(req.file.buffer);
+    if (error) return res.status(400).json({ message: error });
+
+    const validas = filas.filter((f) => f.estado === "valido");
+    const omitidas = filas.filter((f) => f.estado === "omitido");
+    const errores = filas.filter((f) => f.estado === "error");
+
+    // Detectar cuáles ya existen en BD (sin modificar nada)
+    const nombres = validas.map((f) => f.nombre);
+    const existentes = await prisma.producto.findMany({
+      where: { nombre: { in: nombres } },
+      select: { nombre: true, activo: true },
+    });
+    const existenteSet = new Set(existentes.map((p) => p.nombre));
+
+    const preview = validas.map((f) => ({
+      ...f,
+      accion: existenteSet.has(f.nombre) ? "actualizar" : "crear",
+    }));
+
+    res.json({
+      preview,
+      stats: {
+        total: filas.length,
+        validos: validas.length,
+        nuevos: preview.filter((f) => f.accion === "crear").length,
+        actualizar: preview.filter((f) => f.accion === "actualizar").length,
+        omitidos: omitidas.length,
+        errores: errores.length,
+      },
+      omitidos: omitidas,
+      erroresDetalle: errores,
+    });
+  } catch (error) {
+    console.error("Error en preview CSV:", error);
+    res.status(500).json({ message: "Error al procesar preview", error: error.message });
+  }
+};
+
+// ── Importar desde CSV — batch para no saturar el pool de Supabase ────────────
 exports.importarCSV = async (req, res) => {
   try {
-    if (!req.file) {
-      return res.status(400).json({ message: "No se envió ningún archivo" });
+    if (!req.file) return res.status(400).json({ message: "No se envió ningún archivo" });
+
+    const { filas, error } = parseLineasCSV(req.file.buffer);
+    if (error) return res.status(400).json({ message: error });
+
+    const validas = filas.filter((f) => f.estado === "valido");
+    const omitidas = filas.filter((f) => f.estado === "omitido" || f.estado === "error");
+
+    if (validas.length === 0) {
+      return res.status(400).json({ message: "No hay productos válidos para importar" });
     }
 
-    const contenido = req.file.buffer.toString("utf-8");
-    const lineas = contenido
-      .split(/\r?\n/)
-      .map((l) => l.trim())
-      .filter(Boolean);
+    // ── 1. Soft-delete masivo (1 query) ──────────────────────────────────────
+    await prisma.producto.updateMany({ data: { activo: false } });
 
-    if (lineas.length < 2) {
-      return res.status(400).json({ message: "El archivo está vacío o sin datos" });
+    // ── 2. Cargar todos los existentes de una vez (1 query) ──────────────────
+    const nombres = validas.map((f) => f.nombre);
+    const existentes = await prisma.producto.findMany({
+      where: { nombre: { in: nombres } },
+      select: { id: true, nombre: true },
+    });
+    const existenteMap = new Map(existentes.map((p) => [p.nombre, p.id]));
+
+    const toCreate = validas.filter((f) => !existenteMap.has(f.nombre));
+    const toUpdate = validas.filter((f) => existenteMap.has(f.nombre));
+
+    // ── 3. Crear nuevos de golpe (1 query) ───────────────────────────────────
+    if (toCreate.length > 0) {
+      await prisma.producto.createMany({
+        data: toCreate.map(({ nombre, precio }) => ({
+          nombre,
+          servicio: nombre,
+          categoria: nombre.split(/\s+/)[0].toUpperCase().replace(/[^A-ZÁÉÍÓÚÑ]/gi, "") || "GENERAL",
+          precio_final: precio,
+          costo_material: precio,
+          costo_parcial_1: precio,
+          costo_parcial_2: precio,
+          margen: 0,
+          activo: true,
+        })),
+        skipDuplicates: true,
+      });
     }
 
-    const filasDatos = lineas.slice(1); // saltar cabecera
-    const resultados = { creados: 0, actualizados: 0, omitidos: 0, errores: [], total: filasDatos.length };
-
-    // Soft-delete masivo antes de importar (reemplazo total)
-    await prisma.producto.updateMany({ where: { activo: true }, data: { activo: false } });
-
-    for (let i = 0; i < filasDatos.length; i++) {
-      const fila = filasDatos[i];
-      const partes = fila.split(";");
-
-      if (partes.length < 2) { resultados.omitidos++; continue; }
-
-      const nombre = partes[0].trim();
-      const precioRaw = partes[1].trim();
-
-      if (!nombre) { resultados.omitidos++; continue; }
-      if (!precioRaw) { resultados.omitidos++; continue; }
-
-      const precioStr = precioRaw.replace(/S\/\s*/i, "").replace(",", ".").trim();
-      const precio = parseFloat(precioStr);
-
-      if (isNaN(precio)) {
-        resultados.errores.push({ fila: i + 2, nombre, error: `Precio inválido: "${precioRaw}"` });
-        continue;
-      }
-
-      // Categoría: primera palabra del nombre
-      const categoria = nombre.split(/\s+/)[0].toUpperCase().replace(/[^A-ZÁÉÍÓÚÑ]/gi, "") || "GENERAL";
-
-      try {
-        const existente = await prisma.producto.findFirst({ where: { nombre } });
-
-        if (existente) {
-          await prisma.producto.update({
-            where: { id: existente.id },
-            data: { servicio: nombre, categoria, precio_final: precio, costo_material: precio, costo_parcial_1: precio, costo_parcial_2: precio, margen: 0, activo: true },
-          });
-          resultados.actualizados++;
-        } else {
-          await prisma.producto.create({
-            data: { nombre, servicio: nombre, categoria, precio_final: precio, costo_material: precio, costo_parcial_1: precio, costo_parcial_2: precio, margen: 0, activo: true },
-          });
-          resultados.creados++;
-        }
-      } catch (err) {
-        resultados.errores.push({ fila: i + 2, nombre, error: err.message });
-      }
+    // ── 4. Actualizar existentes en una sola transacción (1 conexión) ────────
+    if (toUpdate.length > 0) {
+      await prisma.$transaction(
+        toUpdate.map(({ nombre, precio }) =>
+          prisma.producto.update({
+            where: { id: existenteMap.get(nombre) },
+            data: {
+              servicio: nombre,
+              precio_final: precio,
+              costo_material: precio,
+              costo_parcial_1: precio,
+              costo_parcial_2: precio,
+              activo: true,
+            },
+          })
+        )
+      );
     }
 
-    res.json({ message: "Importación CSV completada", ...resultados });
+    res.json({
+      message: "Importación CSV completada",
+      creados: toCreate.length,
+      actualizados: toUpdate.length,
+      omitidos: omitidas.length,
+      errores: omitidas.filter((f) => f.estado === "error"),
+      total: filas.length,
+    });
   } catch (error) {
     console.error("Error al importar CSV:", error);
     res.status(500).json({ message: "Error al importar archivo CSV", error: error.message });
