@@ -139,6 +139,112 @@ exports.eliminar = async (req, res) => {
   }
 };
 
+// Importar productos desde CSV (formato: Producto;Precio de Produccion)
+exports.importarCSV = async (req, res) => {
+  try {
+    if (!req.file) {
+      return res.status(400).json({ message: "No se envió ningún archivo" });
+    }
+
+    const contenido = req.file.buffer.toString("utf-8");
+    const lineas = contenido
+      .split(/\r?\n/)
+      .map((l) => l.trim())
+      .filter(Boolean);
+
+    if (lineas.length < 2) {
+      return res.status(400).json({ message: "El archivo está vacío o sin datos" });
+    }
+
+    // Ignorar la primera línea (cabecera)
+    const filasDatos = lineas.slice(1);
+
+    const resultados = { creados: 0, actualizados: 0, omitidos: 0, errores: [], total: filasDatos.length };
+
+    // Marcar todos los productos activos como inactivos (reemplazo total)
+    await prisma.producto.updateMany({ where: { activo: true }, data: { activo: false } });
+
+    for (let i = 0; i < filasDatos.length; i++) {
+      const fila = filasDatos[i];
+      const partes = fila.split(";");
+
+      if (partes.length < 2) {
+        resultados.omitidos++;
+        continue;
+      }
+
+      const nombre = partes[0].trim();
+      const precioRaw = partes[1].trim();
+
+      if (!nombre) {
+        resultados.omitidos++;
+        continue;
+      }
+
+      // Parsear precio: "S/ 9.00" → 9.00
+      if (!precioRaw) {
+        // Precio vacío → omitir silenciosamente
+        resultados.omitidos++;
+        continue;
+      }
+
+      const precioStr = precioRaw.replace(/S\/\s*/i, "").replace(",", ".").trim();
+      const precio = parseFloat(precioStr);
+
+      if (isNaN(precio)) {
+        resultados.errores.push({ fila: i + 2, nombre, error: `Precio inválido: "${precioRaw}"` });
+        continue;
+      }
+
+      // Categoría derivada: primera palabra en mayúsculas del nombre
+      const categoria = nombre.split(/\s+/)[0].toUpperCase().replace(/[^A-ZÁÉÍÓÚÑ]/gi, "") || "GENERAL";
+
+      try {
+        const existente = await prisma.producto.findFirst({ where: { nombre } });
+
+        if (existente) {
+          await prisma.producto.update({
+            where: { id: existente.id },
+            data: {
+              servicio: nombre,
+              categoria,
+              precio_final: precio,
+              costo_material: precio,
+              costo_parcial_1: precio,
+              costo_parcial_2: precio,
+              margen: 0,
+              activo: true,
+            },
+          });
+          resultados.actualizados++;
+        } else {
+          await prisma.producto.create({
+            data: {
+              nombre,
+              servicio: nombre,
+              categoria,
+              precio_final: precio,
+              costo_material: precio,
+              costo_parcial_1: precio,
+              costo_parcial_2: precio,
+              margen: 0,
+              activo: true,
+            },
+          });
+          resultados.creados++;
+        }
+      } catch (err) {
+        resultados.errores.push({ fila: i + 2, nombre, error: err.message });
+      }
+    }
+
+    res.json({ message: "Importación CSV completada", ...resultados });
+  } catch (error) {
+    console.error("Error al importar CSV:", error);
+    res.status(500).json({ message: "Error al importar archivo CSV", error: error.message });
+  }
+};
+
 // Importar productos desde Excel
 exports.importarExcel = async (req, res) => {
   try {

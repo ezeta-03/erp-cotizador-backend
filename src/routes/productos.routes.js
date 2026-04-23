@@ -1,7 +1,19 @@
 const router = require("express").Router();
+const multer = require("multer");
 const auth = require("../middlewares/auth.middleware");
 const allowRoles = require("../middlewares/role.middleware");
 const productosController = require("../controllers/productos.controller");
+
+const upload = multer({ storage: multer.memoryStorage() });
+
+// Importar desde CSV (antes de las rutas con :id)
+router.post(
+  "/importar-csv",
+  auth,
+  allowRoles("ADMIN"),
+  upload.single("archivo"),
+  productosController.importarCSV
+);
 
 // Crear producto
 router.post(
@@ -27,7 +39,7 @@ router.put(
   productosController.actualizar
 );
 
-// Eliminar producto
+// Eliminar producto (soft delete)
 router.delete(
   "/:id",
   auth,
