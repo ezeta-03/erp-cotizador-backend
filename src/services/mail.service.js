@@ -1,41 +1,48 @@
-const sgMail = require('@sendgrid/mail');
+const nodemailer = require("nodemailer");
 
-// Configurar API Key
-sgMail.setApiKey(process.env.SENDGRID_API_KEY);
+const crearTransporter = () =>
+  nodemailer.createTransport({
+    host: process.env.MAIL_HOST,
+    port: Number(process.env.MAIL_PORT) || 587,
+    secure: false, // STARTTLS
+    auth: {
+      user: process.env.MAIL_USER,
+      pass: process.env.MAIL_PASS,
+    },
+  });
 
 exports.sendActivationEmail = async ({ to, name, token }) => {
-  const activationLink = `${process.env.FRONTEND_URL}/activar?token=${token}`;
+  const frontendUrl = process.env.FRONTEND_URL || "https://erp-zaazmago.web.app";
+  const activationLink = `${frontendUrl}/activar?token=${token}`;
 
-  const msg = {
-    to: to,
-    from: process.env.MAIL_FROM, // Debe ser el email verificado en SendGrid
-    subject: "Activa tu cuenta - Sistema de Cotización",
+  const transporter = crearTransporter();
+
+  await transporter.sendMail({
+    from: `"${process.env.MAIL_FROM || "Sistema ZAAZMAGO"}" <${process.env.MAIL_USER}>`,
+    to,
+    subject: "Activa tu cuenta — Sistema de Cotización ZAAZMAGO",
     html: `
-      <h2>Hola ${name} 👋</h2>
-      <p>Has sido invitado a nuestro sistema de cotización.</p>
-      <p>Para activar tu cuenta, haz clic en el siguiente enlace:</p>
-      <a href="${activationLink}" style="display: inline-block; padding: 12px 24px; background-color: #4CAF50; color: white; text-decoration: none; border-radius: 4px; margin: 16px 0;">
-        Activar Cuenta
-      </a>
-      <p>O copia y pega este enlace en tu navegador:</p>
-      <p style="color: #666; font-size: 14px;">${activationLink}</p>
-      <p><strong>Este enlace es válido por 24 horas.</strong></p>
-      <br/>
-      <p style="color: #666;">Saludos,<br/>Equipo de Cotización</p>
+      <div style="font-family: Arial, sans-serif; max-width: 520px; margin: 0 auto; color: #111;">
+        <h2 style="margin-bottom: 4px;">Hola, ${name} 👋</h2>
+        <p style="color: #555;">Has sido invitado al sistema de cotización de <strong>ZAAZMAGO</strong>.</p>
+        <p style="color: #555;">Haz clic en el botón para crear tu contraseña y activar tu cuenta:</p>
+        <a href="${activationLink}"
+           style="display: inline-block; margin: 20px 0; padding: 12px 28px;
+                  background: #111; color: #fff; text-decoration: none;
+                  border-radius: 6px; font-weight: 600; font-size: 15px;">
+          Activar mi cuenta
+        </a>
+        <p style="font-size: 13px; color: #888;">
+          O copia este enlace en tu navegador:<br/>
+          <a href="${activationLink}" style="color: #555;">${activationLink}</a>
+        </p>
+        <p style="font-size: 13px; color: #aaa;">Este enlace es válido por 24 horas.</p>
+        <hr style="border: none; border-top: 1px solid #eee; margin: 24px 0;" />
+        <p style="font-size: 12px; color: #bbb;">ZAAZMAGO — Sistema de Cotización</p>
+      </div>
     `,
-    text: `Hola ${name},\n\nHas sido invitado a nuestro sistema de cotización.\n\nPara activar tu cuenta, visita: ${activationLink}\n\nEste enlace es válido por 24 horas.\n\nSaludos,\nEquipo de Cotización`
-  };
+    text: `Hola ${name},\n\nFuiste invitado al sistema de cotización de ZAAZMAGO.\n\nActiva tu cuenta aquí: ${activationLink}\n\nEste enlace es válido por 24 horas.`,
+  });
 
-  try {
-    await sgMail.send(msg);
-    console.log(`✅ Email enviado exitosamente a ${to}`);
-  } catch (error) {
-    console.error('❌ Error de SendGrid:', error);
-    
-    if (error.response) {
-      console.error('Detalles del error:', error.response.body);
-    }
-    
-    throw error;
-  }
+  console.log(`✅ Email de activación enviado a ${to}`);
 };
