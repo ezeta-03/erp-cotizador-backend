@@ -58,14 +58,14 @@ exports.crearCotizacion = async (req, res) => {
         items: {
           create: items.map((item) => {
             const costoParcial1 = item.costo_material * (1 + configuracion.costo_indirecto);
-            const costoParcial2 = costoParcial1 * (1 + configuracion.porcentaje_administrativo);
-            const precioBase = costoParcial2 * (1 + rentabilidad);
+            const costoBase = costoParcial1 * (1 + configuracion.porcentaje_administrativo);
 
             const sumaAdicionales = item.adicionales
               ? item.adicionales.filter((a) => a.seleccionado).reduce((acc, a) => acc + Number(a.precio || 0), 0)
               : 0;
 
-            const precioFinal = precioBase + sumaAdicionales;
+            // Margen se aplica sobre el total del ítem (base + adicionales)
+            const precioFinal = (costoBase + sumaAdicionales) * (1 + rentabilidad);
             const subtotal = precioFinal * item.cantidad;
 
             const glosa = item.adicionales

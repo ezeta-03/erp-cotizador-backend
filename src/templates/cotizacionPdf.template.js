@@ -36,7 +36,7 @@ module.exports = (cotizacion) => {
 <tbody>
 ${items && items.length > 0 ? items
   .map((item, i) => {
-    const productoNombre = item.producto?.material || item.producto?.servicio || item.producto?.nombre || 'Producto';
+    const productoNombre = item.producto?.nombre || item.producto?.servicio || item.producto?.material || 'Producto';
     const glosa = item.glosa || '';
     return `<tr>
       <td>${i + 1}</td>
