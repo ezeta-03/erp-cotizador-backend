@@ -17,6 +17,7 @@ const dashboardRoutes = require("./routes/dashboard.routes");
 const statsRoutes = require("./routes/stats.routes");
 const usuariosRoutes = require("./routes/usuarios.routes");
 const configuracionRouter = require("./routes/configuracion.routes");
+const solicitudesMargenRoutes = require("./routes/solicitudesMargen.routes");
 
 // app.use(cors());
 app.use(express.json());
@@ -29,6 +30,7 @@ app.use("/api/dashboard", dashboardRoutes);
 app.use("/api/stats", statsRoutes);
 app.use("/api/usuarios", usuariosRoutes);
 app.use("/api/configuracion", configuracionRouter);
+app.use("/api/solicitudes-margen", solicitudesMargenRoutes);
 
 // Health check endpoint
 app.get("/api/health", async (req, res) => {

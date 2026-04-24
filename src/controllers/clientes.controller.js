@@ -243,12 +243,12 @@ exports.actividadClientes = async (req, res) => {
       },
     });
 
-    // 🧠 Filtro por producto (post-query, más flexible)
     const filtradas = producto
       ? cotizaciones.filter((c) =>
-          c.items.some((i) =>
-            i.producto.material.toLowerCase().includes(producto.toLowerCase()),
-          ),
+          c.items.some((i) => {
+            const nombre = i.producto.nombre || i.producto.material || "";
+            return nombre.toLowerCase().includes(producto.toLowerCase());
+          })
         )
       : cotizaciones;
 
@@ -274,7 +274,14 @@ exports.getActividadClientes = async (req, res) => {
     }
     if (producto) {
       where.items = {
-        some: { producto: { material: { contains: producto } } },
+        some: {
+          producto: {
+            OR: [
+              { nombre: { contains: producto } },
+              { material: { contains: producto } },
+            ],
+          },
+        },
       };
     }
     if (desde || hasta) {
@@ -309,7 +316,7 @@ exports.actividadesClientes = async (req, res) => {
       include: {
         cliente: { select: { nombreComercial: true } },
         usuario: { select: { nombre: true } },
-        items: { include: { producto: { select: { material: true } } } },
+        items: { include: { producto: { select: { nombre: true, material: true } } } },
       },
       orderBy: { createdAt: "desc" },
     });
