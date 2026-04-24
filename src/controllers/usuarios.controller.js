@@ -3,98 +3,104 @@ const bcrypt = require("bcryptjs");
 const crypto = require("crypto");
 const { sendActivationEmail } = require("../services/mail.service");
 
-// Crear usuario
+// ── Helpers ───────────────────────────────────────────────────────────────────
+const generarToken = () => {
+  const token = crypto.randomUUID();
+  const expires = new Date();
+  expires.setHours(expires.getHours() + 24);
+  return { token, expires };
+};
+
+const selectPublico = {
+  id: true,
+  nombre: true,
+  nombreComercial: true,
+  email: true,
+  role: true,
+  activo: true,
+  activationToken: true,
+  createdAt: true,
+  cliente: { select: { id: true, nombreComercial: true } },
+};
+
+// ── Crear usuario (invitación por email) ─────────────────────────────────────
 exports.crear = async (req, res) => {
   try {
-    const { nombre, nombreComercial, email, password, role, clienteId } = req.body;
+    const { nombre, email, role, clienteId } = req.body;
 
-    // Validar password
-    if (!password) {
-      return res.status(400).json({ message: "La contraseña es obligatoria" });
+    if (!nombre || !email || !role) {
+      return res.status(400).json({ message: "nombre, email y rol son obligatorios" });
     }
 
-    const hash = await bcrypt.hash(password, 10);
+    // Verificar que el email no exista ya
+    const existe = await prisma.usuario.findUnique({ where: { email } });
+    if (existe) {
+      return res.status(400).json({ message: "Ya existe un usuario con ese email" });
+    }
+
+    const { token, expires } = generarToken();
 
     const data = {
       nombre,
       email,
-      password: hash,
       role,
-      activo: true,
+      activo: false,
+      activationToken: token,
+      activationExpires: expires,
     };
 
-    // Si es CLIENTE, asociar relación y nombreComercial
     if (role === "CLIENTE") {
       if (!clienteId) {
         return res.status(400).json({ message: "Debe indicar clienteId para rol CLIENTE" });
       }
       data.cliente = { connect: { id: Number(clienteId) } };
-      if (nombreComercial) {
-        data.nombreComercial = nombreComercial;
-      }
     }
 
     const usuario = await prisma.usuario.create({
       data,
-      select: {
-        id: true,
-        nombre: true,
-        nombreComercial: true,
-        email: true,
-        role: true,
-        activo: true,
-        createdAt: true,
-        cliente: { select: { id: true, nombreComercial: true } },
-      },
+      select: selectPublico,
     });
 
-    res.json(usuario);
+    // Responder de inmediato; enviar email de forma asíncrona
+    res.status(201).json(usuario);
+
+    try {
+      await sendActivationEmail({ to: email, name: nombre, token });
+    } catch (mailErr) {
+      console.error("❌ Error enviando email de activación:", mailErr.message);
+    }
   } catch (error) {
-    console.error("❌ Error creando usuario:", error.message, error.stack);
+    console.error("❌ Error creando usuario:", error.message);
     res.status(500).json({ message: "Error al crear usuario", error: error.message });
   }
 };
 
-
-// Listar usuarios (todos)
+// ── Listar usuarios ───────────────────────────────────────────────────────────
 exports.listar = async (req, res) => {
   try {
     const usuarios = await prisma.usuario.findMany({
       orderBy: { id: "desc" },
-      select: {
-        id: true,
-        nombre: true,
-        nombreComercial: true,
-        email: true,
-        role: true,
-        activo: true,
-        createdAt: true,
-        cliente: { select: { id: true, nombreComercial: true } },
-      },
+      select: selectPublico,
     });
     res.json(usuarios);
   } catch (error) {
-    console.error("❌ Error listando usuarios:", error.message, error.stack);
-    res
-      .status(500)
-      .json({ message: "Error al listar usuarios", error: error.message });
+    res.status(500).json({ message: "Error al listar usuarios", error: error.message });
   }
 };
 
-// Actualizar usuario
+// ── Actualizar usuario ────────────────────────────────────────────────────────
 exports.actualizar = async (req, res) => {
   try {
     const id = Number(req.params.id);
-    const { nombre, email, password, role, clienteId, activo } = req.body;
+    const { nombre, email, password, role, clienteId } = req.body;
 
-    const data = {
-      nombre,
-      email,
-      role,
-      clienteId: role === "CLIENTE" ? clienteId || null : null,
-    };
+    const data = { nombre, email, role };
 
-    if (typeof activo !== "undefined") data.activo = activo;
+    if (role === "CLIENTE") {
+      data.clienteId = clienteId ? Number(clienteId) : null;
+    } else {
+      data.clienteId = null;
+    }
 
     if (password) {
       data.password = await bcrypt.hash(password, 10);
@@ -103,121 +109,86 @@ exports.actualizar = async (req, res) => {
     const usuario = await prisma.usuario.update({
       where: { id },
       data,
-      select: {
-        id: true,
-        nombre: true,
-        email: true,
-        role: true,
-        clienteId: true,
-        activo: true,
-        createdAt: true,
-      },
+      select: selectPublico,
     });
 
     res.json(usuario);
   } catch (error) {
-    console.error("❌ Error actualizando usuario:", error);
-    res.status(500).json({ message: "Error al actualizar usuario", error });
+    console.error("❌ Error actualizando usuario:", error.message);
+    res.status(500).json({ message: "Error al actualizar usuario", error: error.message });
   }
 };
 
-// Eliminar usuario (soft delete: marcar como inactivo)
+// ── Eliminar usuario (soft delete) ───────────────────────────────────────────
 exports.eliminar = async (req, res) => {
   try {
     const id = Number(req.params.id);
-
-    const usuario = await prisma.usuario.update({
-      where: { id },
-      data: { activo: false },
-      select: { id: true },
-    });
-
-    res.json({ success: true, id: usuario.id });
+    await prisma.usuario.update({ where: { id }, data: { activo: false } });
+    res.json({ success: true });
   } catch (error) {
-    console.error("❌ Error eliminando usuario:", error);
-    res.status(500).json({ message: "Error al eliminar usuario", error });
+    res.status(500).json({ message: "Error al eliminar usuario", error: error.message });
   }
 };
 
-// Activar / desactivar usuario
+// ── Activar / desactivar usuario ─────────────────────────────────────────────
 exports.cambiarEstado = async (req, res) => {
   try {
     const id = Number(req.params.id);
-    const { activo } = req.body; // true o false
+    const { activo } = req.body;
 
     if (typeof activo === "undefined") {
-      return res
-        .status(400)
-        .json({ message: "Debe indicar el estado (activo)" });
+      return res.status(400).json({ message: "Debe indicar el estado (activo: true/false)" });
     }
 
     const usuario = await prisma.usuario.update({
       where: { id },
       data: { activo },
-      select: {
-        id: true,
-        nombre: true,
-        nombreComercial: true,
-        email: true,
-        role: true,
-        activo: true,
-        createdAt: true,
-        cliente: { select: { id: true, nombreComercial: true } },
-      },
+      select: selectPublico,
     });
 
     res.json(usuario);
   } catch (error) {
-    console.error("❌ Error cambiando estado de usuario:", error);
-    res
-      .status(500)
-      .json({ message: "Error cambiando estado de usuario", error });
+    res.status(500).json({ message: "Error cambiando estado de usuario", error: error.message });
   }
 };
 
-// Reinvitar usuario
+// ── Reinvitar usuario (reenviar email de activación) ─────────────────────────
 exports.reinvitar = async (req, res) => {
   try {
     const id = Number(req.params.id);
-    const { email } = req.body;
 
     const usuario = await prisma.usuario.findUnique({ where: { id } });
-
     if (!usuario) {
       return res.status(404).json({ message: "Usuario no encontrado" });
     }
 
-    // Generar nuevo token
-    const token = crypto.randomUUID();
-    const expires = new Date();
-    expires.setHours(expires.getHours() + 24);
+    const emailDestino = req.body.email || usuario.email;
+    const { token, expires } = generarToken();
 
-    // Actualizar usuario con nuevo token
     await prisma.usuario.update({
       where: { id },
       data: {
+        email: emailDestino,
         activationToken: token,
         activationExpires: expires,
-        email, // opcional: actualizar email si se cambió
+        activo: false,
       },
     });
 
-    // Responder inmediatamente
+    // Responder antes de enviar el correo para evitar timeout
     res.json({ message: "Invitación reenviada correctamente" });
 
-    // Enviar correo de forma asíncrona
     try {
       await sendActivationEmail({
-        to: email,
-        name: usuario.nombreComercial || usuario.nombre,
+        to: emailDestino,
+        name: usuario.nombre,
         token,
       });
-      console.log(`📧 Correo de reinvitación enviado a ${email}`);
-    } catch (mailError) {
-      console.error("❌ ERROR ENVIANDO CORREO DE REINVITACIÓN:", mailError);
+      console.log(`📧 Reinvitación enviada a ${emailDestino}`);
+    } catch (mailErr) {
+      console.error("❌ Error enviando reinvitación:", mailErr.message);
     }
   } catch (error) {
-    console.error("❌ Error reinvitando usuario:", error);
-    res.status(500).json({ message: "Error reinvitando usuario", error });
+    res.status(500).json({ message: "Error reinvitando usuario", error: error.message });
   }
 };

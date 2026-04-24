@@ -169,10 +169,9 @@ exports.invitarCliente = async (req, res) => {
       },
     });
 
-    // Responder inmediatamente para evitar timeout
+    // Responder antes de enviar el correo para no bloquear la respuesta
     res.json({ message: "Invitación enviada correctamente" });
 
-    // Enviar correo de activación de forma asíncrona
     try {
       await sendActivationEmail({
         to: email,
@@ -180,19 +179,8 @@ exports.invitarCliente = async (req, res) => {
         token,
       });
       console.log(`📧 Correo de invitación enviado a ${email}`);
-      res.json({ message: "Invitación enviada correctamente" });
     } catch (mailError) {
-      console.error("❌ ERROR ENVIANDO CORREO DE INVITACIÓN:", mailError);
-      // No fallar la invitación si el correo falla
-
-      // Si SendGrid da un error específico
-      if (mailError.response) {
-        console.error("Detalles SendGrid:", mailError.response.body);
-      }
-      res.status(500).json({
-        message: "Error enviando el correo de invitación",
-        error: mailError.message,
-      });
+      console.error("❌ ERROR ENVIANDO CORREO DE INVITACIÓN:", mailError.message);
     }
   } catch (error) {
     console.error("❌ ERROR INVITAR CLIENTE:", error);
