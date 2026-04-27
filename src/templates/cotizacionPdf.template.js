@@ -171,7 +171,7 @@ module.exports = (cotizacion) => {
 </div>
 
 <div class="igv-notice ${conIgv ? "con" : "sin"}">
-  ${conIgv ? "✓ Precios con IGV incluido (18%)" : "· Precios sin IGV — valor de venta"}
+  ${conIgv ? "Precios con IGV incluido (18%)" : "Precios sin IGV (valor de venta)"}
 </div>
 
 <table>
