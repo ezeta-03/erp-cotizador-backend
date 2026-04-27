@@ -8,10 +8,33 @@ const { generarGlosa } = require("../utils/glosa");
 ========================= */
 exports.crearCotizacion = async (req, res) => {
   try {
-    const { clienteId, usuarioId, items } = req.body;
+    const { clienteId, usuarioId, items, margen: margenInput } = req.body;
 
     const clienteIdInt = parseInt(clienteId);
     const usuarioIdInt = parseInt(usuarioId);
+
+    const MARGEN_MINIMO = 30;
+    let solicitudUsada = null;
+
+    if (margenInput !== undefined) {
+      const margen = Number(margenInput);
+      if (margen < MARGEN_MINIMO) {
+        const solicitud = await prisma.solicitudMargen.findFirst({
+          where: {
+            usuarioId: usuarioIdInt,
+            estado: "APROBADA",
+            margenSolicitado: { lte: margen },
+          },
+          orderBy: { margenSolicitado: "asc" },
+        });
+        if (!solicitud) {
+          return res.status(403).json({
+            message: "Margen por debajo del mínimo permitido. Necesitas aprobación del administrador.",
+          });
+        }
+        solicitudUsada = solicitud;
+      }
+    }
 
     const vendedor = await prisma.usuario.findUnique({ where: { id: usuarioIdInt } });
     const secuencia = (await prisma.cotizacion.count({ where: { usuarioId: usuarioIdInt } })) + 1;
@@ -82,6 +105,13 @@ exports.crearCotizacion = async (req, res) => {
         },
       },
     });
+
+    if (solicitudUsada) {
+      await prisma.solicitudMargen.update({
+        where: { id: solicitudUsada.id },
+        data: { estado: "USADA" },
+      });
+    }
 
     res.json(updated);
   } catch (error) {
