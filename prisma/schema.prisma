@@ -98,7 +98,7 @@ model CotizacionItem {
   id           Int                   @id @default(autoincrement())
   cotizacionId Int
   productoId   Int
-  cantidad     Int
+  cantidad     Float
   precio       Float
   subtotal     Float
   descripcion  String?

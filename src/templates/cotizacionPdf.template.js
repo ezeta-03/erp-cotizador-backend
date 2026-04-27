@@ -23,7 +23,7 @@ module.exports = (cotizacion) => {
               <span class="item-name">${nombre}</span>
               ${glosa ? `<br/><span class="item-glosa">${glosa}</span>` : ""}
             </td>
-            <td class="td-center">${item.cantidad || 0}</td>
+            <td class="td-center">${parseFloat(item.cantidad || 0)}</td>
             <td class="td-right">${S(item.precio)}</td>
             <td class="td-right td-subtotal">${S(item.subtotal)}</td>
           </tr>`;
@@ -139,6 +139,14 @@ module.exports = (cotizacion) => {
   }
   .footer-note  { font-size: 9px; color: #9ca3af; }
   .footer-brand { font-size: 10px; font-weight: 800; color: #d1d5db; letter-spacing: 0.05em; }
+
+  /* ── IGV Notice ── */
+  .igv-notice {
+    display: inline-block; margin-bottom: 22px;
+    font-size: 9.5px; font-weight: 600; padding: 4px 10px; border-radius: 4px;
+  }
+  .igv-notice.con { background: #dcfce7; color: #166534; }
+  .igv-notice.sin { background: #f3f4f6; color: #6b7280; }
 </style>
 </head>
 <body>
@@ -160,6 +168,10 @@ module.exports = (cotizacion) => {
   <div class="client-name">${cliente?.nombreComercial || "N/A"}</div>
   ${cliente?.nombreContacto ? `<div class="client-sub">${cliente.nombreContacto}</div>` : ""}
   ${cliente?.email ? `<div class="client-sub">${cliente.email}</div>` : ""}
+</div>
+
+<div class="igv-notice ${conIgv ? "con" : "sin"}">
+  ${conIgv ? "✓ Precios con IGV incluido (18%)" : "· Precios sin IGV — valor de venta"}
 </div>
 
 <table>
