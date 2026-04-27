@@ -34,6 +34,9 @@ exports.listar = async (req, res) => {
   try {
     const clientes = await prisma.cliente.findMany({
       orderBy: { id: "desc" },
+      include: {
+        usuario: { select: { id: true, activo: true, activationToken: true } },
+      },
     });
     res.json(clientes);
   } catch (error) {

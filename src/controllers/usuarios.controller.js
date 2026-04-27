@@ -3,7 +3,6 @@ const bcrypt = require("bcryptjs");
 const crypto = require("crypto");
 const { sendActivationEmail } = require("../services/mail.service");
 
-// ── Helpers ───────────────────────────────────────────────────────────────────
 const generarToken = () => {
   const token = crypto.randomUUID();
   const expires = new Date();
@@ -14,25 +13,26 @@ const generarToken = () => {
 const selectPublico = {
   id: true,
   nombre: true,
-  nombreComercial: true,
   email: true,
   role: true,
   activo: true,
   activationToken: true,
   createdAt: true,
-  cliente: { select: { id: true, nombreComercial: true } },
 };
 
-// ── Crear usuario (invitación por email) ─────────────────────────────────────
+// ── Crear usuario interno (ADMIN / VENTAS / CONTABLE) ────────────────────────
 exports.crear = async (req, res) => {
   try {
-    const { nombre, email, role, clienteId } = req.body;
+    const { nombre, email, role } = req.body;
 
     if (!nombre || !email || !role) {
       return res.status(400).json({ message: "nombre, email y rol son obligatorios" });
     }
 
-    // Verificar que el email no exista ya
+    if (role === "CLIENTE") {
+      return res.status(400).json({ message: "Los clientes se gestionan desde la sección Clientes" });
+    }
+
     const existe = await prisma.usuario.findUnique({ where: { email } });
     if (existe) {
       return res.status(400).json({ message: "Ya existe un usuario con ese email" });
@@ -40,28 +40,18 @@ exports.crear = async (req, res) => {
 
     const { token, expires } = generarToken();
 
-    const data = {
-      nombre,
-      email,
-      role,
-      activo: false,
-      activationToken: token,
-      activationExpires: expires,
-    };
-
-    if (role === "CLIENTE") {
-      if (!clienteId) {
-        return res.status(400).json({ message: "Debe indicar clienteId para rol CLIENTE" });
-      }
-      data.cliente = { connect: { id: Number(clienteId) } };
-    }
-
     const usuario = await prisma.usuario.create({
-      data,
+      data: {
+        nombre,
+        email,
+        role,
+        activo: false,
+        activationToken: token,
+        activationExpires: expires,
+      },
       select: selectPublico,
     });
 
-    // Responder de inmediato; enviar email de forma asíncrona
     res.status(201).json(usuario);
 
     try {
@@ -75,10 +65,11 @@ exports.crear = async (req, res) => {
   }
 };
 
-// ── Listar usuarios ───────────────────────────────────────────────────────────
+// ── Listar usuarios internos (excluye CLIENTE) ───────────────────────────────
 exports.listar = async (req, res) => {
   try {
     const usuarios = await prisma.usuario.findMany({
+      where: { role: { not: "CLIENTE" } },
       orderBy: { id: "desc" },
       select: selectPublico,
     });
@@ -88,19 +79,17 @@ exports.listar = async (req, res) => {
   }
 };
 
-// ── Actualizar usuario ────────────────────────────────────────────────────────
+// ── Actualizar usuario interno ────────────────────────────────────────────────
 exports.actualizar = async (req, res) => {
   try {
     const id = Number(req.params.id);
-    const { nombre, email, password, role, clienteId } = req.body;
-
-    const data = { nombre, email, role };
+    const { nombre, email, password, role } = req.body;
 
     if (role === "CLIENTE") {
-      data.clienteId = clienteId ? Number(clienteId) : null;
-    } else {
-      data.clienteId = null;
+      return res.status(400).json({ message: "Los clientes se gestionan desde la sección Clientes" });
     }
+
+    const data = { nombre, email, role };
 
     if (password) {
       data.password = await bcrypt.hash(password, 10);
@@ -167,23 +156,13 @@ exports.reinvitar = async (req, res) => {
 
     await prisma.usuario.update({
       where: { id },
-      data: {
-        email: emailDestino,
-        activationToken: token,
-        activationExpires: expires,
-        activo: false,
-      },
+      data: { email: emailDestino, activationToken: token, activationExpires: expires, activo: false },
     });
 
-    // Responder antes de enviar el correo para evitar timeout
     res.json({ message: "Invitación reenviada correctamente" });
 
     try {
-      await sendActivationEmail({
-        to: emailDestino,
-        name: usuario.nombre,
-        token,
-      });
+      await sendActivationEmail({ to: emailDestino, name: usuario.nombre, token });
       console.log(`📧 Reinvitación enviada a ${emailDestino}`);
     } catch (mailErr) {
       console.error("❌ Error enviando reinvitación:", mailErr.message);
