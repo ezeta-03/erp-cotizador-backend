@@ -8,45 +8,14 @@ const { generarGlosa } = require("../utils/glosa");
 ========================= */
 exports.crearCotizacion = async (req, res) => {
   try {
-    const { clienteId, usuarioId, items, margen: margenInput } = req.body;
+    const { clienteId, usuarioId, items } = req.body;
 
     const clienteIdInt = parseInt(clienteId);
     const usuarioIdInt = parseInt(usuarioId);
 
-    const configuracion = await prisma.configuracion.findFirst();
-    const rentabilidadMinima = configuracion.rentabilidad; // e.g. 0.30
-
-    // Determine effective margin (margenInput is a percentage like 25 or 30)
-    let rentabilidad = rentabilidadMinima;
-    let solicitudUsada = null;
-
-    if (margenInput !== undefined) {
-      const margenDecimal = Number(margenInput) / 100;
-      if (margenDecimal < rentabilidadMinima) {
-        // Require an approved solicitud for this user covering the requested margin
-        const solicitud = await prisma.solicitudMargen.findFirst({
-          where: {
-            usuarioId: usuarioIdInt,
-            estado: "APROBADA",
-            margenSolicitado: { lte: Number(margenInput) },
-          },
-          orderBy: { margenSolicitado: "asc" },
-        });
-        if (!solicitud) {
-          return res.status(403).json({
-            message: "Margen por debajo del mínimo permitido. Necesitas aprobación del administrador.",
-          });
-        }
-        solicitudUsada = solicitud;
-        rentabilidad = margenDecimal;
-      } else {
-        rentabilidad = margenDecimal;
-      }
-    }
-
     const vendedor = await prisma.usuario.findUnique({ where: { id: usuarioIdInt } });
     const secuencia = (await prisma.cotizacion.count({ where: { usuarioId: usuarioIdInt } })) + 1;
-    const numero = `COT-${vendedor.username || vendedor.id}-${new Date().getFullYear()}-${secuencia}`;
+    const numero = `COT-${vendedor.id}-${new Date().getFullYear()}-${secuencia}`;
 
     const cotizacion = await prisma.cotizacion.create({
       data: {
@@ -57,19 +26,15 @@ exports.crearCotizacion = async (req, res) => {
         total: 0,
         items: {
           create: items.map((item) => {
-            const costoParcial1 = item.costo_material * (1 + configuracion.costo_indirecto);
-            const costoBase = costoParcial1 * (1 + configuracion.porcentaje_administrativo);
-
-            const sumaAdicionales = item.adicionales
-              ? item.adicionales.filter((a) => a.seleccionado).reduce((acc, a) => acc + Number(a.precio || 0), 0)
-              : 0;
-
-            // Margen se aplica sobre el total del ítem (base + adicionales)
-            const precioFinal = (costoBase + sumaAdicionales) * (1 + rentabilidad);
+            // Precio viene directamente del frontend (precio_final del producto + adicionales seleccionados)
+            const precioFinal = Number(item.precio);
             const subtotal = precioFinal * item.cantidad;
 
             const glosa = item.adicionales
-              ? item.adicionales.map((a) => (a.seleccionado ? `con ${a.nombre}` : `sin ${a.nombre}`)).join(", ")
+              ? item.adicionales
+                  .filter((a) => a.seleccionado)
+                  .map((a) => `con ${a.nombre}`)
+                  .join(", ")
               : "";
 
             return {
@@ -117,14 +82,6 @@ exports.crearCotizacion = async (req, res) => {
         },
       },
     });
-
-    // Mark the used solicitud as USADA
-    if (solicitudUsada) {
-      await prisma.solicitudMargen.update({
-        where: { id: solicitudUsada.id },
-        data: { estado: "USADA" },
-      });
-    }
 
     res.json(updated);
   } catch (error) {
