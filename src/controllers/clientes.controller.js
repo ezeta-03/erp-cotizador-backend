@@ -95,18 +95,35 @@ exports.actualizar = async (req, res) => {
   }
 };
 
-// Eliminar cliente
+// Desactivar cliente (soft-delete — nunca elimina)
 exports.eliminar = async (req, res) => {
   try {
     const { id } = req.params;
-
-    await prisma.cliente.delete({
+    await prisma.cliente.update({
       where: { id: Number(id) },
+      data: { activo: false },
     });
-
-    res.json({ message: "Cliente eliminado" });
+    res.json({ message: "Cliente desactivado" });
   } catch (error) {
-    res.status(500).json({ message: "Error al eliminar cliente" });
+    res.status(500).json({ message: "Error al desactivar cliente" });
+  }
+};
+
+// Cambiar estado activo del cliente
+exports.cambiarEstado = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { activo } = req.body;
+    if (typeof activo !== "boolean") {
+      return res.status(400).json({ message: "El campo activo debe ser booleano" });
+    }
+    const cliente = await prisma.cliente.update({
+      where: { id: Number(id) },
+      data: { activo },
+    });
+    res.json(cliente);
+  } catch (error) {
+    res.status(500).json({ message: "Error al cambiar estado del cliente" });
   }
 };
 

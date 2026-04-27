@@ -12,8 +12,11 @@ router.get("/", auth, allowRoles("ADMIN", "VENTAS"), clientesController.listar);
 // Actualizar cliente
 router.put("/:id", auth, allowRoles("ADMIN"), clientesController.actualizar);
 
-// Eliminar cliente
+// Desactivar cliente (soft-delete)
 router.delete("/:id", auth, allowRoles("ADMIN"), clientesController.eliminar);
+
+// Cambiar estado activo/inactivo
+router.patch("/:id/estado", auth, allowRoles("ADMIN"), clientesController.cambiarEstado);
 
 // Invitar cliente
 router.post(
