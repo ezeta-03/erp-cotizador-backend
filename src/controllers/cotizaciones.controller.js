@@ -47,6 +47,7 @@ exports.crearCotizacion = async (req, res) => {
         numero,
         estado: "PENDIENTE",
         total: 0,
+        conIgv: conIgv !== undefined ? Boolean(conIgv) : true,
         items: {
           create: items.map((item) => {
             // Precio viene directamente del frontend (precio_final del producto + adicionales seleccionados)

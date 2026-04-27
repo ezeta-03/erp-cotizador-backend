@@ -81,6 +81,7 @@ model Cotizacion {
   id                  Int              @id @default(autoincrement())
   numero              String           @unique
   total               Float
+  conIgv              Boolean          @default(true)
   estado              EstadoCotizacion @default(PENDIENTE)
   createdAt           DateTime         @default(now())
   respondidaAt        DateTime?
