@@ -8,7 +8,7 @@ const { generarGlosa } = require("../utils/glosa");
 ========================= */
 exports.crearCotizacion = async (req, res) => {
   try {
-    const { clienteId, usuarioId, items, margen: margenInput } = req.body;
+    const { clienteId, usuarioId, items, margen: margenInput, conIgv } = req.body;
 
     const clienteIdInt = parseInt(clienteId);
     const usuarioIdInt = parseInt(usuarioId);
@@ -90,7 +90,9 @@ exports.crearCotizacion = async (req, res) => {
       },
     });
 
-    const total = cotizacion.items.reduce((acc, item) => acc + item.subtotal, 0);
+    const IGV_RATE = 0.18;
+    const valorVenta = cotizacion.items.reduce((acc, item) => acc + item.subtotal, 0);
+    const total = parseFloat((conIgv ? valorVenta * (1 + IGV_RATE) : valorVenta).toFixed(2));
 
     const updated = await prisma.cotizacion.update({
       where: { id: cotizacion.id },
