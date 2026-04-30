@@ -1,27 +1,17 @@
-const nodemailer = require("nodemailer");
-
-const crearTransporter = () =>
-  nodemailer.createTransport({
-    host: process.env.MAIL_HOST || "smtp.gmail.com",
-    port: Number(process.env.MAIL_PORT) || 587,
-    secure: false,
-    auth: {
-      user: process.env.MAIL_USER,
-      pass: process.env.MAIL_PASS,
-    },
-  });
+const https = require("https");
 
 exports.sendActivationEmail = async ({ to, name, token }) => {
   const frontendUrl = process.env.FRONTEND_URL || "https://erp-zaazmago.web.app";
   const activationLink = `${frontendUrl}/activar?token=${token}`;
 
-  const transporter = crearTransporter();
-
-  await transporter.sendMail({
-    from: `"Sistema ZAAZMAGO" <${process.env.MAIL_USER}>`,
-    to,
+  const body = JSON.stringify({
+    sender: {
+      name: "Sistema ZAAZMAGO",
+      email: process.env.MAIL_FROM || "academiazenteno@gmail.com",
+    },
+    to: [{ email: to }],
     subject: "Activa tu cuenta — Sistema de Cotización ZAAZMAGO",
-    html: `
+    htmlContent: `
       <div style="font-family: Arial, sans-serif; max-width: 520px; margin: 0 auto; color: #111;">
         <h2 style="margin-bottom: 4px;">Hola, ${name} 👋</h2>
         <p style="color: #555;">Has sido invitado al sistema de cotización de <strong>ZAAZMAGO</strong>.</p>
@@ -41,8 +31,36 @@ exports.sendActivationEmail = async ({ to, name, token }) => {
         <p style="font-size: 12px; color: #bbb;">ZAAZMAGO — Sistema de Cotización</p>
       </div>
     `,
-    text: `Hola ${name},\n\nFuiste invitado al sistema de cotización de ZAAZMAGO.\n\nActiva tu cuenta aquí: ${activationLink}\n\nEste enlace es válido por 24 horas.`,
+    textContent: `Hola ${name},\n\nFuiste invitado al sistema de cotización de ZAAZMAGO.\n\nActiva tu cuenta aquí: ${activationLink}\n\nEste enlace es válido por 24 horas.`,
   });
 
-  console.log(`✅ Email de activación enviado a ${to}`);
+  return new Promise((resolve, reject) => {
+    const req = https.request(
+      {
+        hostname: "api.brevo.com",
+        path: "/v3/smtp/email",
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "api-key": process.env.BREVO_API_KEY,
+          "Content-Length": Buffer.byteLength(body),
+        },
+      },
+      (res) => {
+        let data = "";
+        res.on("data", (chunk) => (data += chunk));
+        res.on("end", () => {
+          if (res.statusCode >= 200 && res.statusCode < 300) {
+            console.log(`✅ Email de activación enviado a ${to}`);
+            resolve();
+          } else {
+            reject(new Error(`Brevo API error ${res.statusCode}: ${data}`));
+          }
+        });
+      }
+    );
+    req.on("error", reject);
+    req.write(body);
+    req.end();
+  });
 };
