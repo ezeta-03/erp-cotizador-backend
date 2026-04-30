@@ -53,7 +53,7 @@ exports.getCotizacionesPorDia = async (req, res) => {
     // Obtener primer y último día del mes actual
     const now = new Date();
     const primerDia = new Date(now.getFullYear(), now.getMonth(), 1);
-    const ultimoDia = new Date(now.getFullYear(), now.getMonth() + 1, 0);
+    const ultimoDia = new Date(now.getFullYear(), now.getMonth() + 1, 0, 23, 59, 59, 999);
 
     // Filtro según rol
     const whereClause = {
@@ -216,7 +216,7 @@ exports.getProgresoMeta = async (req, res) => {
 
     // Obtener total facturado del mes
     const primerDia = new Date(anio, mes - 1, 1);
-    const ultimoDia = new Date(anio, mes, 0);
+    const ultimoDia = new Date(anio, mes, 0, 23, 59, 59, 999);
 
     const cotizacionesFacturadas = await prisma.cotizacion.findMany({
       where: {
@@ -274,7 +274,7 @@ exports.getProgresoTodosVendedores = async (req, res) => {
 
     // Obtener primer y último día del mes
     const primerDia = new Date(anio, mes - 1, 1);
-    const ultimoDia = new Date(anio, mes, 0);
+    const ultimoDia = new Date(anio, mes, 0, 23, 59, 59, 999);
 
     // Para cada vendedor, calcular su progreso
     const vendedoresConProgreso = await Promise.all(
