@@ -22,10 +22,11 @@ exports.getEstadisticasCotizaciones = async (req, res) => {
 
     // Calcular estadísticas por estado
     const stats = {
-      PENDIENTE: { count: 0, total: 0 },
-      APROBADA: { count: 0, total: 0 },
-      RECHAZADA: { count: 0, total: 0 },
-      FACTURADA: { count: 0, total: 0 },
+      PENDIENTE:     { count: 0, total: 0 },
+      APROBADA:      { count: 0, total: 0 },
+      RENEGOCIACION: { count: 0, total: 0 },
+      RECHAZADA:     { count: 0, total: 0 },
+      FACTURADA:     { count: 0, total: 0 },
     };
 
     cotizaciones.forEach((c) => {
@@ -84,7 +85,7 @@ exports.getCotizacionesPorDia = async (req, res) => {
 
       const enviadas = cotizacionesDelDia.length;
       const aprobadas = cotizacionesDelDia.filter(
-        (c) => c.estado === "APROBADA" || c.estado === "FACTURADA"
+        (c) => c.estado === "APROBADA"
       ).length;
 
       const totalEnviadas = cotizacionesDelDia.reduce(
@@ -92,7 +93,7 @@ exports.getCotizacionesPorDia = async (req, res) => {
         0
       );
       const totalAprobadas = cotizacionesDelDia
-        .filter((c) => c.estado === "APROBADA" || c.estado === "FACTURADA")
+        .filter((c) => c.estado === "APROBADA")
         .reduce((sum, c) => sum + c.total, 0);
 
       datosPorDia.push({
@@ -220,7 +221,7 @@ exports.getProgresoMeta = async (req, res) => {
     const cotizacionesFacturadas = await prisma.cotizacion.findMany({
       where: {
         usuarioId: targetUserId,
-        estado: { in: ["APROBADA", "FACTURADA"] },
+        estado: "APROBADA",
         createdAt: {
           gte: primerDia,
           lte: ultimoDia,
@@ -291,11 +292,11 @@ exports.getProgresoTodosVendedores = async (req, res) => {
 
         const montoMeta = meta?.monto || 0;
 
-        // Obtener cotizaciones aprobadas + facturadas
+        // Obtener cotizaciones aprobadas
         const cotizacionesFacturadas = await prisma.cotizacion.findMany({
           where: {
             usuarioId: vendedor.id,
-            estado: { in: ["APROBADA", "FACTURADA"] },
+            estado: "APROBADA",
             createdAt: {
               gte: primerDia,
               lte: ultimoDia,
