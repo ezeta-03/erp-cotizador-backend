@@ -58,6 +58,7 @@ model Producto {
   precio_final    Float
   margen          Float
   activo          Boolean             @default(true)
+  tipoMedida      TipoMedida          @default(UNIDAD)
   nombre          String?
   createdAt       DateTime            @default(now())
   updatedAt       DateTime            @updatedAt
@@ -100,6 +101,8 @@ model CotizacionItem {
   productoId   Int
   cantidad     Float
   medida       Float                 @default(1)
+  medidaAncho  Float?
+  medidaAlto   Float?
   precio       Float
   subtotal     Float
   descripcion  String?
@@ -129,6 +132,13 @@ model MetaMensual {
 
   @@unique([usuarioId, mes, anio])
   @@index([mes, anio])
+}
+
+enum TipoMedida {
+  UNIDAD
+  LINEAL
+  AREA
+  PESO
 }
 
 enum Rol {

@@ -88,6 +88,29 @@ exports.actualizar = async (req, res) => {
   }
 };
 
+// ── Actualizar tipo de medida + unidad ────────────────────────────────────────
+exports.actualizarTipoMedida = async (req, res) => {
+  try {
+    const id = parseInt(req.params.id, 10);
+    const { tipoMedida, unidad } = req.body;
+    const validos = ["UNIDAD", "LINEAL", "AREA", "PESO"];
+    if (tipoMedida && !validos.includes(tipoMedida)) {
+      return res.status(400).json({ message: "tipoMedida inválido" });
+    }
+    const producto = await prisma.producto.update({
+      where: { id },
+      data: {
+        ...(tipoMedida && { tipoMedida }),
+        unidad: unidad !== undefined ? (unidad || null) : undefined,
+      },
+    });
+    res.json(producto);
+  } catch (error) {
+    console.error("❌ Error actualizando tipo de medida:", error);
+    res.status(500).json({ message: "Error actualizando tipo de medida" });
+  }
+};
+
 // ── Eliminar un producto (soft delete) ───────────────────────────────────────
 exports.eliminar = async (req, res) => {
   try {

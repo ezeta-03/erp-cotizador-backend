@@ -48,6 +48,14 @@ router.get(
   productosController.listar
 );
 
+// Actualizar tipo de medida + unidad
+router.patch(
+  "/:id/tipo-medida",
+  auth,
+  allowRoles("ADMIN"),
+  productosController.actualizarTipoMedida
+);
+
 // Actualizar producto
 router.put(
   "/:id",

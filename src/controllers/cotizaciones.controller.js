@@ -65,6 +65,8 @@ exports.crearCotizacion = async (req, res) => {
               productoId: item.productoId,
               cantidad: item.cantidad,
               medida: item.medida || 1,
+              medidaAncho: item.medidaAncho || null,
+              medidaAlto: item.medidaAlto || null,
               precio: precioFinal,
               subtotal,
               descripcion: glosa,
