@@ -7,10 +7,18 @@ const controller = require("../controllers/cotizaciones.controller");
 
 // Cliente: ver última cotización
 router.get(
-  "/mia",  // ← Esta debe ir ANTES de /:id
+  "/mia",
   auth,
   allowRoles("CLIENTE"),
   controller.ultimaCotizacionCliente
+);
+
+// Cliente: ver todas sus cotizaciones
+router.get(
+  "/mis-cotizaciones",
+  auth,
+  allowRoles("CLIENTE"),
+  controller.misCotizaciones
 );
 
 // 🔥 HISTÓRICO (ADMIN, VENTAS)
@@ -53,6 +61,14 @@ router.post(
   auth,
   allowRoles("CLIENTE"),
   controller.responderCotizacion
+);
+
+// VENTAS/ADMIN: renegociar cotización rechazada
+router.post(
+  "/:id/renegociar",
+  auth,
+  allowRoles("ADMIN", "VENTAS"),
+  controller.renegociarCotizacion
 );
 
 // VENTAS/ADMIN: facturar cotización aprobada

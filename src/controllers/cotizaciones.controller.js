@@ -310,6 +310,130 @@ exports.historicoCotizaciones = async (req, res) => {
 };
 
 /* =========================
+   CLIENTE: TODAS SUS COTIZACIONES
+========================= */
+exports.misCotizaciones = async (req, res) => {
+  try {
+    const usuario = await prisma.usuario.findUnique({
+      where: { id: req.user.id },
+      include: { cliente: true },
+    });
+    if (!usuario?.cliente) return res.json([]);
+
+    const cotizaciones = await prisma.cotizacion.findMany({
+      where: { clienteId: usuario.cliente.id },
+      include: {
+        items: {
+          include: {
+            producto: true,
+            adicionales: { include: { adicional: true } },
+          },
+        },
+        usuario: { select: { nombre: true } },
+      },
+      orderBy: { createdAt: "desc" },
+    });
+
+    res.json(cotizaciones);
+  } catch (error) {
+    res.status(500).json({ message: "Error obteniendo cotizaciones" });
+  }
+};
+
+/* =========================
+   VENTAS/ADMIN: RENEGOCIAR (actualizar items de una RECHAZADA y resetear a PENDIENTE)
+========================= */
+exports.renegociarCotizacion = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { items, conIgv } = req.body;
+
+    const cotizacion = await prisma.cotizacion.findUnique({ where: { id: Number(id) } });
+    if (!cotizacion) return res.status(404).json({ message: "Cotización no encontrada" });
+    if (cotizacion.estado !== "RECHAZADA") {
+      return res.status(400).json({ message: "Solo se pueden renegociar cotizaciones rechazadas" });
+    }
+    if (req.user.role === "VENTAS" && cotizacion.usuarioId !== req.user.id) {
+      return res.status(403).json({ message: "No autorizado" });
+    }
+
+    const existingItems = await prisma.cotizacionItem.findMany({
+      where: { cotizacionId: Number(id) },
+      select: { id: true },
+    });
+    const itemIds = existingItems.map((i) => i.id);
+    if (itemIds.length > 0) {
+      await prisma.cotizacionAdicional.deleteMany({ where: { cotizacionItemId: { in: itemIds } } });
+      await prisma.cotizacionItem.deleteMany({ where: { cotizacionId: Number(id) } });
+    }
+
+    const IGV_RATE = 0.18;
+    let valorVenta = 0;
+
+    for (const item of items) {
+      const precioFinal = Number(item.precio);
+      const subtotal = precioFinal * item.cantidad;
+      valorVenta += subtotal;
+
+      const glosa = item.adicionales
+        ? item.adicionales.filter((a) => a.seleccionado).map((a) => `con ${a.nombre}`).join(", ")
+        : "";
+
+      await prisma.cotizacionItem.create({
+        data: {
+          cotizacionId: Number(id),
+          productoId: item.productoId,
+          cantidad: item.cantidad,
+          medida: item.medida || 1,
+          medidaAncho: item.medidaAncho || null,
+          medidaAlto: item.medidaAlto || null,
+          precio: precioFinal,
+          subtotal,
+          descripcion: item.descripcion || glosa,
+          adicionales: item.adicionales?.length
+            ? {
+                create: item.adicionales.map((a) => ({
+                  adicionalId: a.id,
+                  seleccionado: a.seleccionado,
+                  precio: Number(a.precio),
+                })),
+              }
+            : undefined,
+        },
+      });
+    }
+
+    const igvFlag = conIgv !== undefined ? Boolean(conIgv) : cotizacion.conIgv;
+    const total = parseFloat((igvFlag ? valorVenta * (1 + IGV_RATE) : valorVenta).toFixed(2));
+
+    const updated = await prisma.cotizacion.update({
+      where: { id: Number(id) },
+      data: {
+        estado: "PENDIENTE",
+        respuestaComentario: null,
+        respondidaAt: null,
+        total,
+        conIgv: igvFlag,
+      },
+      include: {
+        cliente: true,
+        items: {
+          include: {
+            producto: true,
+            adicionales: { include: { adicional: true } },
+          },
+        },
+      },
+    });
+
+    res.json(updated);
+  } catch (error) {
+    console.error("❌ Error renegociando cotización:", error);
+    res.status(500).json({ message: "Error renegociando cotización", detail: error.message });
+  }
+};
+
+/* =========================
    PDF
 ========================= */
 exports.generarPdf = async (req, res) => {
