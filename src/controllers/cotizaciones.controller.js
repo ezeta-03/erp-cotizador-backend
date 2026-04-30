@@ -69,7 +69,7 @@ exports.crearCotizacion = async (req, res) => {
               medidaAlto: item.medidaAlto || null,
               precio: precioFinal,
               subtotal,
-              descripcion: glosa,
+              descripcion: item.descripcion || glosa,
               adicionales: item.adicionales?.length
                 ? {
                     create: item.adicionales.map((a) => ({
