@@ -58,6 +58,7 @@ model Producto {
   precio_final    Float
   margen          Float
   activo          Boolean             @default(true)
+  origen          String              @default("CSV")
   tipoMedida      TipoMedida          @default(UNIDAD)
   nombre          String?
   createdAt       DateTime            @default(now())

@@ -22,31 +22,36 @@ exports.listar = async (req, res) => {
   }
 };
 
-// ── Crear producto ────────────────────────────────────────────────────────────
+// ── Crear producto (formulario manual) ───────────────────────────────────────
 exports.crear = async (req, res) => {
   try {
-    const { categoria, servicio, material, unidad, costo_material, adicionales } = req.body;
+    const { nombre, precio_final, tipoMedida, unidad } = req.body;
 
-    if (!categoria || !servicio || costo_material === undefined) {
-      return res.status(400).json({ message: "Faltan campos requeridos: categoria, servicio, costo_material" });
+    if (!nombre || precio_final === undefined) {
+      return res.status(400).json({ message: "Faltan campos requeridos: nombre, precio_final" });
     }
 
-    const costo = Number(costo_material);
+    const precio = parseFloat(String(precio_final).replace(",", "."));
+    if (isNaN(precio) || precio <= 0) {
+      return res.status(400).json({ message: "precio_final debe ser un número positivo" });
+    }
+
+    const categoria = nombre.trim().split(/\s+/)[0].toUpperCase().replace(/[^A-ZÁÉÍÓÚÑ]/gi, "") || "GENERAL";
+
     const producto = await prisma.producto.create({
       data: {
+        nombre: nombre.trim(),
+        servicio: nombre.trim(),
         categoria,
-        servicio,
-        nombre: servicio,
-        material: material || null,
-        unidad: unidad || null,
-        costo_material: costo,
-        costo_parcial_1: parseFloat((costo * 1.1).toFixed(2)),
-        costo_parcial_2: parseFloat((costo * 1.1 * 1.17).toFixed(2)),
-        precio_final: parseFloat((costo * 1.1 * 1.17 * 1.2).toFixed(2)),
-        margen: parseFloat((costo * 1.1 * 1.17 * 1.2 * 0.2).toFixed(2)),
-        adicionales: adicionales?.length
-          ? { create: adicionales.map((a) => ({ nombre: a.nombre, precio: Number(a.precio) })) }
-          : undefined,
+        precio_final: precio,
+        costo_material: precio,
+        costo_parcial_1: precio,
+        costo_parcial_2: precio,
+        margen: 0,
+        unidad: unidad?.trim() || null,
+        tipoMedida: tipoMedida || "UNIDAD",
+        activo: true,
+        origen: "MANUAL",
       },
     });
     res.status(201).json(producto);
@@ -226,14 +231,14 @@ exports.importarCSV = async (req, res) => {
       return res.status(400).json({ message: "No hay productos válidos para importar" });
     }
 
-    // ── 1. Soft-delete masivo (1 query) ──────────────────────────────────────
-    await prisma.producto.updateMany({ data: { activo: false } });
+    // ── 1. Soft-delete solo productos CSV (los manuales sobreviven) ──────────
+    await prisma.producto.updateMany({ where: { origen: "CSV" }, data: { activo: false } });
 
     // ── 2. Cargar todos los existentes de una vez (1 query) ──────────────────
     const nombres = validas.map((f) => f.nombre);
     const existentes = await prisma.producto.findMany({
       where: { nombre: { in: nombres } },
-      select: { id: true, nombre: true },
+      select: { id: true, nombre: true, origen: true },
     });
     const existenteMap = new Map(existentes.map((p) => [p.nombre, p.id]));
 
@@ -253,6 +258,7 @@ exports.importarCSV = async (req, res) => {
           costo_parcial_2: precio,
           margen: 0,
           activo: true,
+          origen: "CSV",
         })),
         skipDuplicates: true,
       });
