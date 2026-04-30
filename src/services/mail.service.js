@@ -3,11 +3,17 @@ const https = require("https");
 exports.sendActivationEmail = async ({ to, name, token }) => {
   const frontendUrl = process.env.FRONTEND_URL || "https://erp-zaazmago.web.app";
   const activationLink = `${frontendUrl}/activar?token=${token}`;
+  const senderEmail = (process.env.MAIL_FROM || "academiazenteno@gmail.com").trim();
+
+  console.log("📧 Enviando correo con Brevo:");
+  console.log("   sender:", senderEmail);
+  console.log("   to:", to);
+  console.log("   api-key presente:", !!process.env.BREVO_API_KEY);
 
   const body = JSON.stringify({
     sender: {
       name: "Sistema ZAAZMAGO",
-      email: process.env.MAIL_FROM || "academiazenteno@gmail.com",
+      email: senderEmail,
     },
     to: [{ email: to }],
     subject: "Activa tu cuenta — Sistema de Cotización ZAAZMAGO",
