@@ -194,7 +194,7 @@ exports.responderCotizacion = async (req, res) => {
     const { id } = req.params;
     const { estado, comentario } = req.body;
 
-    if (!["APROBADA", "RECHAZADA"].includes(estado)) {
+    if (!["APROBADA", "RENEGOCIACION"].includes(estado)) {
       return res.status(400).json({ message: "Estado inválido" });
     }
 
@@ -350,8 +350,8 @@ exports.renegociarCotizacion = async (req, res) => {
 
     const cotizacion = await prisma.cotizacion.findUnique({ where: { id: Number(id) } });
     if (!cotizacion) return res.status(404).json({ message: "Cotización no encontrada" });
-    if (cotizacion.estado !== "RECHAZADA") {
-      return res.status(400).json({ message: "Solo se pueden renegociar cotizaciones rechazadas" });
+    if (cotizacion.estado !== "RENEGOCIACION") {
+      return res.status(400).json({ message: "Solo se pueden renegociar cotizaciones en estado de renegociación" });
     }
     if (req.user.role === "VENTAS" && cotizacion.usuarioId !== req.user.id) {
       return res.status(403).json({ message: "No autorizado" });
