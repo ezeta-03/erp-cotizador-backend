@@ -85,6 +85,14 @@ exports.actualizar = async (req, res) => {
       },
     });
 
+    // Mantener el nombre del usuario vinculado sincronizado con nombreComercial
+    if (nombreComercial !== undefined && existe.usuarioId) {
+      await prisma.usuario.update({
+        where: { id: existe.usuarioId },
+        data: { nombre: nombreComercial },
+      });
+    }
+
     res.json(cliente);
   } catch (error) {
     console.error("❌ Prisma error:", error);
