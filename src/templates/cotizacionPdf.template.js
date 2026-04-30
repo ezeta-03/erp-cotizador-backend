@@ -16,12 +16,16 @@ module.exports = (cotizacion) => {
     ? items.map((item, i) => {
         const nombre = item.producto?.nombre || item.producto?.servicio || item.producto?.material || "Producto";
         const glosa  = item.descripcion || item.glosa || "";
+        const medida = item.medida || 1;
+        const unidad = item.producto?.unidad || "";
+        const medidaStr = medida !== 1 ? `${parseFloat(medida)} ${unidad}`.trim() + " por pieza" : null;
         return `
           <tr>
             <td class="td-num">${i + 1}</td>
             <td class="td-desc">
               <span class="item-name">${nombre}</span>
               ${glosa ? `<br/><span class="item-glosa">${glosa}</span>` : ""}
+              ${medidaStr ? `<br/><span class="item-medida">${medidaStr}</span>` : ""}
             </td>
             <td class="td-center">${parseFloat(item.cantidad || 0)}</td>
             <td class="td-right">${S(item.precio)}</td>
@@ -105,6 +109,7 @@ module.exports = (cotizacion) => {
   .td-desc     { padding-right: 16px; }
   .item-name   { font-weight: 600; color: #111; }
   .item-glosa  { font-size: 9.5px; color: #6b7280; margin-top: 1px; }
+  .item-medida { font-size: 9px; color: #9ca3af; margin-top: 1px; font-style: italic; }
   .td-center   { text-align: center; width: 42px; color: #374151; }
   .td-right    { text-align: right; width: 88px; color: #374151; }
   .td-subtotal { font-weight: 600; color: #111; padding-right: 0; }

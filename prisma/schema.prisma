@@ -99,6 +99,7 @@ model CotizacionItem {
   cotizacionId Int
   productoId   Int
   cantidad     Float
+  medida       Float                 @default(1)
   precio       Float
   subtotal     Float
   descripcion  String?
