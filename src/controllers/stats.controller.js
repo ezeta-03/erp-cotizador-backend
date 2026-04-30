@@ -219,8 +219,8 @@ exports.getProgresoMeta = async (req, res) => {
 
     const cotizacionesFacturadas = await prisma.cotizacion.findMany({
       where: {
-        usuarioId: targetUserId, // 🔥 CAMBIO
-        estado: "FACTURADA",
+        usuarioId: targetUserId,
+        estado: { in: ["APROBADA", "FACTURADA"] },
         createdAt: {
           gte: primerDia,
           lte: ultimoDia,
@@ -291,11 +291,11 @@ exports.getProgresoTodosVendedores = async (req, res) => {
 
         const montoMeta = meta?.monto || 0;
 
-        // Obtener cotizaciones facturadas
+        // Obtener cotizaciones aprobadas + facturadas
         const cotizacionesFacturadas = await prisma.cotizacion.findMany({
           where: {
-            usuarioId: vendedor.id, // 🔥 CAMBIO: vendedorId → usuarioId
-            estado: "FACTURADA",
+            usuarioId: vendedor.id,
+            estado: { in: ["APROBADA", "FACTURADA"] },
             createdAt: {
               gte: primerDia,
               lte: ultimoDia,
