@@ -12,13 +12,8 @@ const allowRoles = require("../middlewares/role.middleware");
 router.post("/login", authController.login);
 router.post("/activar", authController.activarCuenta);
 
-// ================== CLIENTE ==================
-router.post(
-  "/cambiar-password",
-  auth,
-  allowRoles("CLIENTE"),
-  authController.cambiarPassword
-);
+// ================== TODOS LOS ROLES ==================
+router.post("/cambiar-password", auth, authController.cambiarPassword);
 
 // ================== USUARIO ACTUAL ==================
 router.get("/me", auth, authController.me);
