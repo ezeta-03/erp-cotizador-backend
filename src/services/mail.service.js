@@ -1,16 +1,24 @@
-const sgMail = require("@sendgrid/mail");
+const nodemailer = require("nodemailer");
 
-sgMail.setApiKey(process.env.SENDGRID_API_KEY);
+const crearTransporter = () =>
+  nodemailer.createTransport({
+    host: process.env.MAIL_HOST || "smtp.gmail.com",
+    port: Number(process.env.MAIL_PORT) || 587,
+    secure: false,
+    auth: {
+      user: process.env.MAIL_USER,
+      pass: process.env.MAIL_PASS,
+    },
+  });
 
 exports.sendActivationEmail = async ({ to, name, token }) => {
   const frontendUrl = process.env.FRONTEND_URL || "https://erp-zaazmago.web.app";
   const activationLink = `${frontendUrl}/activar?token=${token}`;
 
-  await sgMail.send({
-    from: {
-      email: process.env.MAIL_FROM || "academiazenteno@gmail.com",
-      name: "Sistema ZAAZMAGO",
-    },
+  const transporter = crearTransporter();
+
+  await transporter.sendMail({
+    from: `"Sistema ZAAZMAGO" <${process.env.MAIL_USER}>`,
     to,
     subject: "Activa tu cuenta — Sistema de Cotización ZAAZMAGO",
     html: `
