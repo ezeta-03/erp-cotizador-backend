@@ -18,23 +18,37 @@ exports.sendActivationEmail = async ({ to, name, token }) => {
     to: [{ email: to }],
     subject: "Activa tu cuenta — Sistema de Cotización ZAAZMAGO",
     htmlContent: `
-      <div style="font-family: Arial, sans-serif; max-width: 520px; margin: 0 auto; color: #111;">
-        <h2 style="margin-bottom: 4px;">Hola, ${name} 👋</h2>
-        <p style="color: #555;">Has sido invitado al sistema de cotización de <strong>ZAAZMAGO</strong>.</p>
-        <p style="color: #555;">Haz clic en el botón para crear tu contraseña y activar tu cuenta:</p>
-        <a href="${activationLink}"
-           style="display: inline-block; margin: 20px 0; padding: 12px 28px;
-                  background: #111; color: #fff; text-decoration: none;
-                  border-radius: 6px; font-weight: 600; font-size: 15px;">
-          Activar mi cuenta
-        </a>
-        <p style="font-size: 13px; color: #888;">
-          O copia este enlace en tu navegador:<br/>
-          <a href="${activationLink}" style="color: #555;">${activationLink}</a>
-        </p>
-        <p style="font-size: 13px; color: #aaa;">Este enlace es válido por 24 horas.</p>
-        <hr style="border: none; border-top: 1px solid #eee; margin: 24px 0;" />
-        <p style="font-size: 12px; color: #bbb;">ZAAZMAGO — Sistema de Cotización</p>
+      <div style="font-family: Arial, sans-serif; background: #f4f6f9; padding: 24px 0; color: #111;">
+        <div style="width: 100%; max-width: 520px; margin: 0 auto; background: #ffffff; border-radius: 20px; box-shadow: 0 18px 50px rgba(15, 23, 42, 0.08); overflow: hidden;">
+          <div style="padding: 28px 28px 18px; border-bottom: 1px solid #e5e7eb; background: #fff;">
+            <div style="font-size: 12px; font-weight: 700; letter-spacing: 0.12em; text-transform: uppercase; color: #111; opacity: 0.65; margin-bottom: 14px;">Sistema de Cotización</div>
+            <h2 style="margin: 0 0 10px; font-size: 28px; line-height: 1.15;">Hola, ${name} 👋</h2>
+            <p style="margin: 0; color: #4b5563; font-size: 15px; line-height: 1.7;">
+              Has sido invitado al sistema de cotización de <strong>ZAAZMAGO</strong>. Crea tu contraseña y activa tu cuenta para comenzar a gestionar cotizaciones de forma rápida.
+            </p>
+          </div>
+
+          <div style="padding: 24px 28px 32px;">
+            <div style="background: #f8fafc; border: 1px solid #e5e7eb; border-radius: 16px; padding: 20px; margin-bottom: 24px;">
+              <p style="margin: 0 0 12px; color: #374151; font-size: 14px; line-height: 1.7;">Tu enlace de activación está listo. Haz clic en el botón y completa el formulario para establecer tu contraseña.</p>
+              <a href="${activationLink}"
+                 style="display: inline-flex; align-items: center; justify-content: center; width: 100%; max-width: 260px; margin: 0 auto; padding: 14px 0; background: #111111; color: #ffffff; text-decoration: none; border-radius: 10px; font-weight: 700; font-size: 15px;">
+                Activar mi cuenta
+              </a>
+            </div>
+
+            <div style="font-size: 13px; color: #6b7280; line-height: 1.7;">
+              <p style="margin: 0 0 8px;">O copia y pega este enlace en tu navegador:</p>
+              <p style="margin: 0; word-break: break-all;"><a href="${activationLink}" style="color: #111111; text-decoration: none;">${activationLink}</a></p>
+            </div>
+
+            <p style="margin: 20px 0 0; font-size: 13px; color: #9ca3af;">Este enlace es válido por 24 horas.</p>
+          </div>
+
+          <div style="padding: 18px 28px 26px; background: #f9fafb; border-top: 1px solid #e5e7eb;">
+            <p style="margin: 0; font-size: 12px; color: #9ca3af;">ZAAZMAGO — Sistema de Cotización</p>
+          </div>
+        </div>
       </div>
     `,
     textContent: `Hola ${name},\n\nFuiste invitado al sistema de cotización de ZAAZMAGO.\n\nActiva tu cuenta aquí: ${activationLink}\n\nEste enlace es válido por 24 horas.`,
