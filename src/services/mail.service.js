@@ -18,7 +18,7 @@ exports.sendActivationEmail = async ({ to, name, token }) => {
     to: [{ email: to }],
     subject: "Activa tu cuenta — Sistema de Cotización ZAAZMAGO",
     htmlContent: `
-      <div style="font-family: Arial, sans-serif; background: #f4f6f9; padding: 24px 0; color: #111;">
+     Put your HTML text here<div style="font-family: Arial, sans-serif; background: #f4f6f9; padding: 24px 0; color: #111;">
         <div style="width: 100%; max-width: 520px; margin: 0 auto; background: #ffffff; border-radius: 20px; box-shadow: 0 18px 50px rgba(15, 23, 42, 0.08); overflow: hidden;">
           <div style="padding: 28px 28px 18px; border-bottom: 1px solid #e5e7eb; background: #fff;">
             <div style="text-align: center; margin-bottom: 20px;">
@@ -35,9 +35,11 @@ exports.sendActivationEmail = async ({ to, name, token }) => {
             <div style="background: #f8fafc; border: 1px solid #e5e7eb; border-radius: 16px; padding: 20px; margin-bottom: 24px;">
               <p style="margin: 0 0 12px; color: #374151; font-size: 14px; line-height: 1.7;">Tu enlace de activación está listo. Haz clic en el botón y completa el formulario para establecer tu contraseña.</p>
               <a href="${activationLink}"
-                 style="display: inline-flex; align-items: center; justify-content: center; text-align: center; width: 100%; max-width: 260px; margin: 0 auto; padding: 14px 0; background: #111111; color: #ffffff; text-decoration: none; border-radius: 10px; font-weight: 700; font-size: 15px;">
-                Activar mi cuenta
-              </a>
+           style="display: inline-block; margin: 20px 0; padding: 12px 28px;
+                  background: #111; color: #fff; text-decoration: none;
+                  border-radius: 6px; font-weight: 600; font-size: 15px;">
+          Activar mi cuenta
+        </a>
             </div>
 
             <div style="font-size: 13px; color: #6b7280; line-height: 1.7;">
