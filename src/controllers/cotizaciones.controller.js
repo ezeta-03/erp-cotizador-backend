@@ -3,6 +3,49 @@ const puppeteer = require("puppeteer");
 const cotizacionTemplate = require("../templates/cotizacionPdf.template");
 const { generarGlosa } = require("../utils/glosa");
 
+const IGV_RATE = 0.18;
+const MARGEN_MINIMO = 30;
+
+const roundCurrency = (v) => Math.round(v * 100) / 100;
+
+const buildItems = (items) =>
+  items.map((item) => {
+    const precioFinal = Number(item.precio);
+    const subtotal = precioFinal * item.cantidad;
+    const glosa = item.adicionales
+      ? item.adicionales.filter((a) => a.seleccionado).map((a) => `con ${a.nombre}`).join(", ")
+      : "";
+    return {
+      productoId: item.productoId,
+      cantidad: item.cantidad,
+      medida: item.medida || 1,
+      medidaAncho: item.medidaAncho || null,
+      medidaAlto: item.medidaAlto || null,
+      precio: precioFinal,
+      subtotal,
+      descripcion: item.descripcion || glosa,
+      adicionales: item.adicionales?.length
+        ? {
+            create: item.adicionales.map((a) => ({
+              adicionalId: a.id,
+              seleccionado: a.seleccionado,
+              precio: Number(a.precio),
+            })),
+          }
+        : undefined,
+    };
+  });
+
+const validarProductosActivos = async (tx, items) => {
+  const ids = [...new Set(items.map((i) => i.productoId))];
+  const activos = await tx.producto.findMany({
+    where: { id: { in: ids }, activo: true },
+    select: { id: true },
+  });
+  const idsActivos = new Set(activos.map((p) => p.id));
+  return items.find((i) => !idsActivos.has(i.productoId)) ? false : true;
+};
+
 /* =========================
    CREAR COTIZACIÓN
 ========================= */
@@ -13,114 +56,85 @@ exports.crearCotizacion = async (req, res) => {
     const clienteIdInt = parseInt(clienteId);
     const usuarioIdInt = parseInt(usuarioId);
 
-    const MARGEN_MINIMO = 30;
-    let solicitudUsada = null;
-
-    if (margenInput !== undefined) {
-      const margen = Number(margenInput);
-      if (margen < MARGEN_MINIMO) {
-        const solicitud = await prisma.solicitudMargen.findFirst({
-          where: {
-            usuarioId: usuarioIdInt,
-            estado: "APROBADA",
-            margenSolicitado: { lte: margen },
-          },
-          orderBy: { margenSolicitado: "asc" },
-        });
-        if (!solicitud) {
-          return res.status(403).json({
-            message: "Margen por debajo del mínimo permitido. Necesitas aprobación del administrador.",
+    const result = await prisma.$transaction(async (tx) => {
+      // ── 1. Validar margen y consumir solicitud atómicamente ──────────────────
+      if (margenInput !== undefined) {
+        const margen = Number(margenInput);
+        if (margen < MARGEN_MINIMO) {
+          const solicitud = await tx.solicitudMargen.findFirst({
+            where: {
+              usuarioId: usuarioIdInt,
+              estado: "APROBADA",
+              margenSolicitado: { lte: margen },
+            },
+            orderBy: { margenSolicitado: "asc" },
           });
+          if (!solicitud) {
+            throw Object.assign(new Error("MARGEN_NO_APROBADO"), { statusCode: 403 });
+          }
+          // Marca como USADA solo si aún está APROBADA (previene race condition)
+          const consumed = await tx.solicitudMargen.updateMany({
+            where: { id: solicitud.id, estado: "APROBADA" },
+            data: { estado: "USADA" },
+          });
+          if (consumed.count === 0) {
+            throw Object.assign(new Error("MARGEN_NO_APROBADO"), { statusCode: 403 });
+          }
         }
-        solicitudUsada = solicitud;
       }
-    }
 
-    const vendedor = await prisma.usuario.findUnique({ where: { id: usuarioIdInt } });
-    const secuencia = (await prisma.cotizacion.count({ where: { usuarioId: usuarioIdInt } })) + 1;
-    const numero = `COT-${vendedor.id}-${new Date().getFullYear()}-${secuencia}`;
+      // ── 2. Validar que todos los productos estén activos ─────────────────────
+      const todosActivos = await validarProductosActivos(tx, items);
+      if (!todosActivos) {
+        throw Object.assign(new Error("PRODUCTO_INACTIVO"), { statusCode: 400 });
+      }
 
-    const cotizacion = await prisma.cotizacion.create({
-      data: {
-        clienteId: clienteIdInt,
-        usuarioId: usuarioIdInt,
-        numero,
-        estado: "PENDIENTE",
-        total: 0,
-        conIgv: conIgv !== undefined ? Boolean(conIgv) : true,
-        items: {
-          create: items.map((item) => {
-            // Precio viene directamente del frontend (precio_final del producto + adicionales seleccionados)
-            const precioFinal = Number(item.precio);
-            const subtotal = precioFinal * item.cantidad;
+      // ── 3. Generar número de cotización ──────────────────────────────────────
+      const vendedor = await tx.usuario.findUnique({ where: { id: usuarioIdInt } });
+      const secuencia = (await tx.cotizacion.count({ where: { usuarioId: usuarioIdInt } })) + 1;
+      const numero = `COT-${vendedor.id}-${new Date().getFullYear()}-${secuencia}`;
 
-            const glosa = item.adicionales
-              ? item.adicionales
-                  .filter((a) => a.seleccionado)
-                  .map((a) => `con ${a.nombre}`)
-                  .join(", ")
-              : "";
-
-            return {
-              productoId: item.productoId,
-              cantidad: item.cantidad,
-              medida: item.medida || 1,
-              medidaAncho: item.medidaAncho || null,
-              medidaAlto: item.medidaAlto || null,
-              precio: precioFinal,
-              subtotal,
-              descripcion: item.descripcion || glosa,
-              adicionales: item.adicionales?.length
-                ? {
-                    create: item.adicionales.map((a) => ({
-                      adicionalId: a.id,
-                      seleccionado: a.seleccionado,
-                      precio: Number(a.precio),
-                    })),
-                  }
-                : undefined,
-            };
-          }),
+      // ── 4. Crear cotización con items ────────────────────────────────────────
+      const cotizacion = await tx.cotizacion.create({
+        data: {
+          clienteId: clienteIdInt,
+          usuarioId: usuarioIdInt,
+          numero,
+          estado: "PENDIENTE",
+          total: 0,
+          conIgv: conIgv !== undefined ? Boolean(conIgv) : true,
+          items: { create: buildItems(items) },
         },
-      },
-      include: {
-        cliente: true,
-        items: {
-          include: {
-            producto: true,
-            adicionales: { include: { adicional: true } },
-          },
+        include: {
+          cliente: true,
+          items: { include: { producto: true, adicionales: { include: { adicional: true } } } },
         },
-      },
+      });
+
+      // ── 5. Calcular total con precisión ──────────────────────────────────────
+      const valorVenta = cotizacion.items.reduce((acc, i) => acc + i.subtotal, 0);
+      const total = roundCurrency(conIgv ? valorVenta * (1 + IGV_RATE) : valorVenta);
+
+      return tx.cotizacion.update({
+        where: { id: cotizacion.id },
+        data: { total },
+        include: {
+          cliente: true,
+          items: { include: { producto: true, adicionales: { include: { adicional: true } } } },
+        },
+      });
     });
 
-    const IGV_RATE = 0.18;
-    const valorVenta = cotizacion.items.reduce((acc, item) => acc + item.subtotal, 0);
-    const total = parseFloat((conIgv ? valorVenta * (1 + IGV_RATE) : valorVenta).toFixed(2));
-
-    const updated = await prisma.cotizacion.update({
-      where: { id: cotizacion.id },
-      data: { total },
-      include: {
-        cliente: true,
-        items: {
-          include: {
-            producto: true,
-            adicionales: { include: { adicional: true } },
-          },
-        },
-      },
-    });
-
-    if (solicitudUsada) {
-      await prisma.solicitudMargen.update({
-        where: { id: solicitudUsada.id },
-        data: { estado: "USADA" },
+    res.json(result);
+  } catch (error) {
+    if (error.message === "MARGEN_NO_APROBADO") {
+      return res.status(error.statusCode || 403).json({
+        message: "Margen por debajo del mínimo permitido. Necesitas aprobación del administrador.",
       });
     }
-
-    res.json(updated);
-  } catch (error) {
+    if (error.message === "PRODUCTO_INACTIVO") {
+      return res.status(400).json({ message: "Uno o más productos ya no están disponibles." });
+    }
     console.error("❌ Error creando cotización:", error);
     res.status(500).json({ message: "Error creando cotización", detail: error.message });
   }
@@ -357,77 +371,84 @@ exports.renegociarCotizacion = async (req, res) => {
       return res.status(403).json({ message: "No autorizado" });
     }
 
-    const existingItems = await prisma.cotizacionItem.findMany({
-      where: { cotizacionId: Number(id) },
-      select: { id: true },
-    });
-    const itemIds = existingItems.map((i) => i.id);
-    if (itemIds.length > 0) {
-      await prisma.cotizacionAdicional.deleteMany({ where: { cotizacionItemId: { in: itemIds } } });
-      await prisma.cotizacionItem.deleteMany({ where: { cotizacionId: Number(id) } });
-    }
+    // ── Todo dentro de una transacción: delete + create + update atómicos ────
+    const updated = await prisma.$transaction(async (tx) => {
+      // Validar productos activos antes de tocar datos
+      const todosActivos = await validarProductosActivos(tx, items);
+      if (!todosActivos) {
+        throw Object.assign(new Error("PRODUCTO_INACTIVO"), { statusCode: 400 });
+      }
 
-    const IGV_RATE = 0.18;
-    let valorVenta = 0;
+      // Eliminar items existentes
+      const existingItems = await tx.cotizacionItem.findMany({
+        where: { cotizacionId: Number(id) },
+        select: { id: true },
+      });
+      const itemIds = existingItems.map((i) => i.id);
+      if (itemIds.length > 0) {
+        await tx.cotizacionAdicional.deleteMany({ where: { cotizacionItemId: { in: itemIds } } });
+        await tx.cotizacionItem.deleteMany({ where: { cotizacionId: Number(id) } });
+      }
 
-    for (const item of items) {
-      const precioFinal = Number(item.precio);
-      const subtotal = precioFinal * item.cantidad;
-      valorVenta += subtotal;
+      // Crear nuevos items y acumular valor de venta
+      let valorVenta = 0;
+      for (const item of items) {
+        const precioFinal = Number(item.precio);
+        const subtotal = precioFinal * item.cantidad;
+        valorVenta += subtotal;
 
-      const glosa = item.adicionales
-        ? item.adicionales.filter((a) => a.seleccionado).map((a) => `con ${a.nombre}`).join(", ")
-        : "";
+        const glosa = item.adicionales
+          ? item.adicionales.filter((a) => a.seleccionado).map((a) => `con ${a.nombre}`).join(", ")
+          : "";
 
-      await prisma.cotizacionItem.create({
+        await tx.cotizacionItem.create({
+          data: {
+            cotizacionId: Number(id),
+            productoId: item.productoId,
+            cantidad: item.cantidad,
+            medida: item.medida || 1,
+            medidaAncho: item.medidaAncho || null,
+            medidaAlto: item.medidaAlto || null,
+            precio: precioFinal,
+            subtotal,
+            descripcion: item.descripcion || glosa,
+            adicionales: item.adicionales?.length
+              ? {
+                  create: item.adicionales.map((a) => ({
+                    adicionalId: a.id,
+                    seleccionado: a.seleccionado,
+                    precio: Number(a.precio),
+                  })),
+                }
+              : undefined,
+          },
+        });
+      }
+
+      const igvFlag = conIgv !== undefined ? Boolean(conIgv) : cotizacion.conIgv;
+      const total = roundCurrency(igvFlag ? valorVenta * (1 + IGV_RATE) : valorVenta);
+
+      return tx.cotizacion.update({
+        where: { id: Number(id) },
         data: {
-          cotizacionId: Number(id),
-          productoId: item.productoId,
-          cantidad: item.cantidad,
-          medida: item.medida || 1,
-          medidaAncho: item.medidaAncho || null,
-          medidaAlto: item.medidaAlto || null,
-          precio: precioFinal,
-          subtotal,
-          descripcion: item.descripcion || glosa,
-          adicionales: item.adicionales?.length
-            ? {
-                create: item.adicionales.map((a) => ({
-                  adicionalId: a.id,
-                  seleccionado: a.seleccionado,
-                  precio: Number(a.precio),
-                })),
-              }
-            : undefined,
+          estado: "PENDIENTE",
+          respuestaComentario: null,
+          respondidaAt: null,
+          total,
+          conIgv: igvFlag,
+        },
+        include: {
+          cliente: true,
+          items: { include: { producto: true, adicionales: { include: { adicional: true } } } },
         },
       });
-    }
-
-    const igvFlag = conIgv !== undefined ? Boolean(conIgv) : cotizacion.conIgv;
-    const total = parseFloat((igvFlag ? valorVenta * (1 + IGV_RATE) : valorVenta).toFixed(2));
-
-    const updated = await prisma.cotizacion.update({
-      where: { id: Number(id) },
-      data: {
-        estado: "PENDIENTE",
-        respuestaComentario: null,
-        respondidaAt: null,
-        total,
-        conIgv: igvFlag,
-      },
-      include: {
-        cliente: true,
-        items: {
-          include: {
-            producto: true,
-            adicionales: { include: { adicional: true } },
-          },
-        },
-      },
     });
 
     res.json(updated);
   } catch (error) {
+    if (error.message === "PRODUCTO_INACTIVO") {
+      return res.status(400).json({ message: "Uno o más productos ya no están disponibles." });
+    }
     console.error("❌ Error renegociando cotización:", error);
     res.status(500).json({ message: "Error renegociando cotización", detail: error.message });
   }

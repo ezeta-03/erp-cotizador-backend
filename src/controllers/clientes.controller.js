@@ -141,6 +141,10 @@ exports.invitarCliente = async (req, res) => {
     const clienteId = Number(req.params.id);
     const { email } = req.body;
 
+    if (!email || typeof email !== "string" || !email.includes("@")) {
+      return res.status(400).json({ message: "Email inválido" });
+    }
+
     // Verificar cliente
     const cliente = await prisma.cliente.findUnique({
       where: { id: clienteId },
