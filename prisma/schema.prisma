@@ -26,10 +26,11 @@ model Usuario {
   activationToken   String?       @unique
   activationExpires DateTime?
   createdAt         DateTime      @default(now())
-  cliente             Cliente?
-  cotizaciones        Cotizacion[]
-  metas               MetaMensual[]
-  solicitudesMargen   SolicitudMargen[]
+  cliente                  Cliente?
+  cotizaciones             Cotizacion[]
+  metas                    MetaMensual[]
+  solicitudesMargen        SolicitudMargen[]  @relation("SolicitudesCreadas")
+  solicitudesResueltas     SolicitudMargen[]  @relation("SolicitudesResueltas")
 }
 
 model Cliente {
@@ -170,7 +171,11 @@ model SolicitudMargen {
   margenSolicitado Float
   comentario       String
   estado           EstadoSolicitud @default(PENDIENTE)
+  aprobadaPorId    Int?
+  resolvedAt       DateTime?
+  motivoRechazo    String?
   createdAt        DateTime        @default(now())
   updatedAt        DateTime        @updatedAt
-  usuario          Usuario         @relation(fields: [usuarioId], references: [id])
+  usuario          Usuario         @relation("SolicitudesCreadas", fields: [usuarioId], references: [id])
+  aprobadaPor      Usuario?        @relation("SolicitudesResueltas", fields: [aprobadaPorId], references: [id])
 }

@@ -40,7 +40,10 @@ exports.listar = async (req, res) => {
 
     const solicitudes = await prisma.solicitudMargen.findMany({
       where,
-      include: { usuario: { select: { id: true, nombre: true, email: true } } },
+      include: {
+        usuario: { select: { id: true, nombre: true, email: true } },
+        aprobadaPor: { select: { id: true, nombre: true } },
+      },
       orderBy: { createdAt: "desc" },
     });
 
@@ -70,8 +73,15 @@ exports.aprobar = async (req, res) => {
     const id = Number(req.params.id);
     const solicitud = await prisma.solicitudMargen.update({
       where: { id },
-      data: { estado: "APROBADA" },
-      include: { usuario: { select: { nombre: true } } },
+      data: {
+        estado: "APROBADA",
+        aprobadaPorId: req.user.id,
+        resolvedAt: new Date(),
+      },
+      include: {
+        usuario: { select: { nombre: true } },
+        aprobadaPor: { select: { nombre: true } },
+      },
     });
     res.json(solicitud);
   } catch (error) {
@@ -84,10 +94,24 @@ exports.aprobar = async (req, res) => {
 exports.rechazar = async (req, res) => {
   try {
     const id = Number(req.params.id);
+    const { motivo } = req.body;
+
+    if (!motivo?.trim()) {
+      return res.status(400).json({ message: "El motivo de rechazo es requerido" });
+    }
+
     const solicitud = await prisma.solicitudMargen.update({
       where: { id },
-      data: { estado: "RECHAZADA" },
-      include: { usuario: { select: { nombre: true } } },
+      data: {
+        estado: "RECHAZADA",
+        aprobadaPorId: req.user.id,
+        resolvedAt: new Date(),
+        motivoRechazo: motivo.trim(),
+      },
+      include: {
+        usuario: { select: { nombre: true } },
+        aprobadaPor: { select: { nombre: true } },
+      },
     });
     res.json(solicitud);
   } catch (error) {
