@@ -32,6 +32,8 @@ model Usuario {
   solicitudesMargen        SolicitudMargen[]  @relation("SolicitudesCreadas")
   solicitudesResueltas     SolicitudMargen[]  @relation("SolicitudesResueltas")
   cotizacionLogs           CotizacionLog[]
+  metaLogs                 MetaMensualLog[] @relation("MetaLogVendedor")
+  metaLogsCambios          MetaMensualLog[] @relation("MetaLogAdmin")
 }
 
 model Cliente {
@@ -150,6 +152,21 @@ model MetaMensual {
 
   @@unique([usuarioId, mes, anio])
   @@index([mes, anio])
+}
+
+model MetaMensualLog {
+  id            Int      @id @default(autoincrement())
+  usuarioId     Int
+  mes           Int
+  anio          Int
+  montoAnterior Float?
+  montoNuevo    Float
+  cambiadoPorId Int
+  createdAt     DateTime @default(now())
+  usuario       Usuario  @relation("MetaLogVendedor", fields: [usuarioId], references: [id])
+  cambiadoPor   Usuario  @relation("MetaLogAdmin", fields: [cambiadoPorId], references: [id])
+
+  @@index([usuarioId, mes, anio])
 }
 
 enum TipoMedida {
