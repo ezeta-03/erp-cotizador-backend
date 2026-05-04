@@ -72,6 +72,10 @@ exports.activarCuenta = async (req, res) => {
     },
   });
 
+  await prisma.usuarioLog.create({
+    data: { usuarioId: user.id, evento: "ACTIVADO", realizadoPorId: null },
+  });
+
   res.json({ message: "Cuenta activada" });
 };
 

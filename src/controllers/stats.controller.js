@@ -149,7 +149,7 @@ exports.getMetaMensual = async (req, res) => {
 // Crear o actualizar meta mensual (solo ADMIN)
 exports.setMetaMensual = async (req, res) => {
   try {
-    const { role } = req.user;
+    const { role, id: adminId } = req.user;
 
     if (role !== "ADMIN") {
       return res.status(403).json({ error: "No autorizado" });
@@ -165,20 +165,24 @@ exports.setMetaMensual = async (req, res) => {
     const mes = now.getMonth() + 1;
     const anio = now.getFullYear();
 
+    const anterior = await prisma.metaMensual.findUnique({
+      where: { usuarioId_mes_anio: { usuarioId: vendedorId, mes, anio } },
+    });
+
     const meta = await prisma.metaMensual.upsert({
-      where: {
-        usuarioId_mes_anio: {
-          usuarioId: vendedorId,
-          mes,
-          anio,
-        },
-      },
+      where: { usuarioId_mes_anio: { usuarioId: vendedorId, mes, anio } },
       update: { monto },
-      create: {
+      create: { usuarioId: vendedorId, monto, mes, anio },
+    });
+
+    await prisma.metaMensualLog.create({
+      data: {
         usuarioId: vendedorId,
-        monto,
         mes,
         anio,
+        montoAnterior: anterior?.monto ?? null,
+        montoNuevo: monto,
+        cambiadoPorId: adminId,
       },
     });
 
@@ -186,6 +190,31 @@ exports.setMetaMensual = async (req, res) => {
   } catch (error) {
     console.error("Error en setMetaMensual:", error);
     res.status(500).json({ error: "Error al establecer meta mensual" });
+  }
+};
+
+// Historial de cambios de meta mensual (solo ADMIN)
+exports.getMetaMensualLog = async (req, res) => {
+  try {
+    const { role } = req.user;
+    if (role !== "ADMIN") return res.status(403).json({ error: "No autorizado" });
+
+    const vendedorId = parseInt(req.params.vendedorId);
+    if (isNaN(vendedorId)) return res.status(400).json({ error: "vendedorId inválido" });
+
+    const logs = await prisma.metaMensualLog.findMany({
+      where: { usuarioId: vendedorId },
+      orderBy: { createdAt: "desc" },
+      take: 20,
+      include: {
+        cambiadoPor: { select: { id: true, nombre: true } },
+      },
+    });
+
+    res.json(logs);
+  } catch (error) {
+    console.error("Error en getMetaMensualLog:", error);
+    res.status(500).json({ error: "Error al obtener historial de meta" });
   }
 };
 

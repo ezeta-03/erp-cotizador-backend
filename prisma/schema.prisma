@@ -26,10 +26,16 @@ model Usuario {
   activationToken   String?       @unique
   activationExpires DateTime?
   createdAt         DateTime      @default(now())
-  cliente             Cliente?
-  cotizaciones        Cotizacion[]
-  metas               MetaMensual[]
-  solicitudesMargen   SolicitudMargen[]
+  cliente                  Cliente?
+  cotizaciones             Cotizacion[]
+  metas                    MetaMensual[]
+  solicitudesMargen        SolicitudMargen[]  @relation("SolicitudesCreadas")
+  solicitudesResueltas     SolicitudMargen[]  @relation("SolicitudesResueltas")
+  cotizacionLogs           CotizacionLog[]
+  metaLogs                 MetaMensualLog[] @relation("MetaLogVendedor")
+  metaLogsCambios          MetaMensualLog[] @relation("MetaLogAdmin")
+  logsComoSujeto           UsuarioLog[]    @relation("LogsDeUsuario")
+  logsRealizados           UsuarioLog[]    @relation("LogsRealizados")
 }
 
 model Cliente {
@@ -94,6 +100,21 @@ model Cotizacion {
   cliente             Cliente          @relation(fields: [clienteId], references: [id])
   usuario             Usuario          @relation(fields: [usuarioId], references: [id])
   items               CotizacionItem[]
+  log                 CotizacionLog[]
+}
+
+model CotizacionLog {
+  id             Int               @id @default(autoincrement())
+  cotizacionId   Int
+  usuarioId      Int
+  estadoAnterior EstadoCotizacion?
+  estadoNuevo    EstadoCotizacion
+  comentario     String?
+  createdAt      DateTime          @default(now())
+  cotizacion     Cotizacion        @relation(fields: [cotizacionId], references: [id])
+  usuario        Usuario           @relation(fields: [usuarioId], references: [id])
+
+  @@index([cotizacionId])
 }
 
 model CotizacionItem {
@@ -135,6 +156,21 @@ model MetaMensual {
   @@index([mes, anio])
 }
 
+model MetaMensualLog {
+  id            Int      @id @default(autoincrement())
+  usuarioId     Int
+  mes           Int
+  anio          Int
+  montoAnterior Float?
+  montoNuevo    Float
+  cambiadoPorId Int
+  createdAt     DateTime @default(now())
+  usuario       Usuario  @relation("MetaLogVendedor", fields: [usuarioId], references: [id])
+  cambiadoPor   Usuario  @relation("MetaLogAdmin", fields: [cambiadoPorId], references: [id])
+
+  @@index([usuarioId, mes, anio])
+}
+
 enum TipoMedida {
   UNIDAD
   LINEAL
@@ -157,11 +193,31 @@ enum EstadoCotizacion {
   FACTURADA
 }
 
+enum EventoUsuario {
+  INVITADO
+  REINVITADO
+  ACTIVADO
+  DESACTIVADO
+  ACTIVADO_ADMIN
+}
+
 enum EstadoSolicitud {
   PENDIENTE
   APROBADA
   RECHAZADA
   USADA
+}
+
+model UsuarioLog {
+  id             Int           @id @default(autoincrement())
+  usuarioId      Int
+  evento         EventoUsuario
+  realizadoPorId Int?
+  createdAt      DateTime      @default(now())
+  usuario        Usuario       @relation("LogsDeUsuario", fields: [usuarioId], references: [id])
+  realizadoPor   Usuario?      @relation("LogsRealizados", fields: [realizadoPorId], references: [id])
+
+  @@index([usuarioId])
 }
 
 model SolicitudMargen {
@@ -170,7 +226,11 @@ model SolicitudMargen {
   margenSolicitado Float
   comentario       String
   estado           EstadoSolicitud @default(PENDIENTE)
+  aprobadaPorId    Int?
+  resolvedAt       DateTime?
+  motivoRechazo    String?
   createdAt        DateTime        @default(now())
   updatedAt        DateTime        @updatedAt
-  usuario          Usuario         @relation(fields: [usuarioId], references: [id])
+  usuario          Usuario         @relation("SolicitudesCreadas", fields: [usuarioId], references: [id])
+  aprobadaPor      Usuario?        @relation("SolicitudesResueltas", fields: [aprobadaPorId], references: [id])
 }
