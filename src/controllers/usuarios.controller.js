@@ -52,6 +52,10 @@ exports.crear = async (req, res) => {
       select: selectPublico,
     });
 
+    await prisma.usuarioLog.create({
+      data: { usuarioId: usuario.id, evento: "INVITADO", realizadoPorId: req.user.id },
+    });
+
     res.status(201).json(usuario);
 
     try {
@@ -135,9 +139,35 @@ exports.cambiarEstado = async (req, res) => {
       select: selectPublico,
     });
 
+    await prisma.usuarioLog.create({
+      data: {
+        usuarioId: id,
+        evento: activo ? "ACTIVADO_ADMIN" : "DESACTIVADO",
+        realizadoPorId: req.user.id,
+      },
+    });
+
     res.json(usuario);
   } catch (error) {
     res.status(500).json({ message: "Error cambiando estado de usuario", error: error.message });
+  }
+};
+
+// ── Log de eventos de usuario ─────────────────────────────────────────────────
+exports.listarLog = async (req, res) => {
+  try {
+    const id = Number(req.params.id);
+    const logs = await prisma.usuarioLog.findMany({
+      where: { usuarioId: id },
+      orderBy: { createdAt: "desc" },
+      take: 30,
+      include: {
+        realizadoPor: { select: { id: true, nombre: true } },
+      },
+    });
+    res.json(logs);
+  } catch (error) {
+    res.status(500).json({ message: "Error al obtener log de usuario", error: error.message });
   }
 };
 
@@ -157,6 +187,10 @@ exports.reinvitar = async (req, res) => {
     await prisma.usuario.update({
       where: { id },
       data: { email: emailDestino, activationToken: token, activationExpires: expires, activo: false },
+    });
+
+    await prisma.usuarioLog.create({
+      data: { usuarioId: id, evento: "REINVITADO", realizadoPorId: req.user.id },
     });
 
     res.json({ message: "Invitación reenviada correctamente" });

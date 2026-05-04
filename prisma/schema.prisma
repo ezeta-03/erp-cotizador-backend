@@ -34,6 +34,8 @@ model Usuario {
   cotizacionLogs           CotizacionLog[]
   metaLogs                 MetaMensualLog[] @relation("MetaLogVendedor")
   metaLogsCambios          MetaMensualLog[] @relation("MetaLogAdmin")
+  logsComoSujeto           UsuarioLog[]    @relation("LogsDeUsuario")
+  logsRealizados           UsuarioLog[]    @relation("LogsRealizados")
 }
 
 model Cliente {
@@ -191,11 +193,31 @@ enum EstadoCotizacion {
   FACTURADA
 }
 
+enum EventoUsuario {
+  INVITADO
+  REINVITADO
+  ACTIVADO
+  DESACTIVADO
+  ACTIVADO_ADMIN
+}
+
 enum EstadoSolicitud {
   PENDIENTE
   APROBADA
   RECHAZADA
   USADA
+}
+
+model UsuarioLog {
+  id             Int           @id @default(autoincrement())
+  usuarioId      Int
+  evento         EventoUsuario
+  realizadoPorId Int?
+  createdAt      DateTime      @default(now())
+  usuario        Usuario       @relation("LogsDeUsuario", fields: [usuarioId], references: [id])
+  realizadoPor   Usuario?      @relation("LogsRealizados", fields: [realizadoPorId], references: [id])
+
+  @@index([usuarioId])
 }
 
 model SolicitudMargen {

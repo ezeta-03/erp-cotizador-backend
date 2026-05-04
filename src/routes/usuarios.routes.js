@@ -23,4 +23,9 @@ router.post(
   allowRoles("ADMIN"),
   usuariosController.reinvitar
 );
+router.get(
+  "/:id/log",
+  allowRoles("ADMIN"),
+  usuariosController.listarLog
+);
 module.exports = router;
