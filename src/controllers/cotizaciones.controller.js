@@ -3,6 +3,17 @@ const puppeteer = require("puppeteer");
 const cotizacionTemplate = require("../templates/cotizacionPdf.template");
 const { generarGlosa } = require("../utils/glosa");
 
+const registrarLog = (client, { cotizacionId, usuarioId, estadoAnterior, estadoNuevo, comentario }) =>
+  client.cotizacionLog.create({
+    data: {
+      cotizacionId,
+      usuarioId,
+      estadoAnterior: estadoAnterior || null,
+      estadoNuevo,
+      comentario: comentario || null,
+    },
+  });
+
 /* =========================
    CREAR COTIZACIÓN
 ========================= */
@@ -119,6 +130,13 @@ exports.crearCotizacion = async (req, res) => {
       });
     }
 
+    await registrarLog(prisma, {
+      cotizacionId: updated.id,
+      usuarioId: usuarioIdInt,
+      estadoAnterior: null,
+      estadoNuevo: "PENDIENTE",
+    });
+
     res.json(updated);
   } catch (error) {
     console.error("❌ Error creando cotización:", error);
@@ -215,6 +233,14 @@ exports.responderCotizacion = async (req, res) => {
       data: { estado, respuestaComentario: comentario || null, respondidaAt: new Date() },
     });
 
+    await registrarLog(prisma, {
+      cotizacionId: Number(id),
+      usuarioId: req.user.id,
+      estadoAnterior: cotizacion.estado,
+      estadoNuevo: estado,
+      comentario: comentario || null,
+    });
+
     res.json(updated);
   } catch (error) {
     console.error("❌ Error respondiendo cotización:", error);
@@ -238,6 +264,13 @@ exports.facturarCotizacion = async (req, res) => {
     const updated = await prisma.cotizacion.update({
       where: { id: Number(id) },
       data: { estado: "FACTURADA", facturadaAt: new Date() },
+    });
+
+    await registrarLog(prisma, {
+      cotizacionId: Number(id),
+      usuarioId: req.user.id,
+      estadoAnterior: "APROBADA",
+      estadoNuevo: "FACTURADA",
     });
 
     res.json(updated);
@@ -426,6 +459,13 @@ exports.renegociarCotizacion = async (req, res) => {
       },
     });
 
+    await registrarLog(prisma, {
+      cotizacionId: Number(id),
+      usuarioId: req.user.id,
+      estadoAnterior: "RENEGOCIACION",
+      estadoNuevo: "PENDIENTE",
+    });
+
     res.json(updated);
   } catch (error) {
     console.error("❌ Error renegociando cotización:", error);
@@ -487,5 +527,35 @@ exports.generarPdf = async (req, res) => {
     console.error("❌ Error generando PDF:", error.message);
     if (browser) await browser.close().catch(() => {});
     res.status(500).json({ message: "Error generando PDF" });
+  }
+};
+
+/* =========================
+   LOG DE ESTADOS
+========================= */
+exports.obtenerLog = async (req, res) => {
+  try {
+    const cotizacionId = Number(req.params.id);
+
+    if (req.user.role === "CLIENTE") {
+      const cotizacion = await prisma.cotizacion.findUnique({
+        where: { id: cotizacionId },
+        include: { cliente: true },
+      });
+      if (!cotizacion || cotizacion.cliente.usuarioId !== req.user.id) {
+        return res.status(403).json({ message: "No autorizado" });
+      }
+    }
+
+    const log = await prisma.cotizacionLog.findMany({
+      where: { cotizacionId },
+      include: { usuario: { select: { nombre: true, role: true } } },
+      orderBy: { createdAt: "asc" },
+    });
+
+    res.json(log);
+  } catch (error) {
+    console.error("❌ Error obteniendo log:", error);
+    res.status(500).json({ message: "Error obteniendo log de cotización" });
   }
 };

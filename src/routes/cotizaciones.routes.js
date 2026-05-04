@@ -82,4 +82,12 @@ router.post(
 // Descargar PDF
 router.get("/:id/pdf", auth, controller.generarPdf);
 
+// Log de cambios de estado
+router.get(
+  "/:id/log",
+  auth,
+  allowRoles("ADMIN", "VENTAS", "CONTABLE", "CLIENTE"),
+  controller.obtenerLog
+);
+
 module.exports = router;

@@ -31,6 +31,7 @@ model Usuario {
   metas                    MetaMensual[]
   solicitudesMargen        SolicitudMargen[]  @relation("SolicitudesCreadas")
   solicitudesResueltas     SolicitudMargen[]  @relation("SolicitudesResueltas")
+  cotizacionLogs           CotizacionLog[]
 }
 
 model Cliente {
@@ -95,6 +96,21 @@ model Cotizacion {
   cliente             Cliente          @relation(fields: [clienteId], references: [id])
   usuario             Usuario          @relation(fields: [usuarioId], references: [id])
   items               CotizacionItem[]
+  log                 CotizacionLog[]
+}
+
+model CotizacionLog {
+  id             Int               @id @default(autoincrement())
+  cotizacionId   Int
+  usuarioId      Int
+  estadoAnterior EstadoCotizacion?
+  estadoNuevo    EstadoCotizacion
+  comentario     String?
+  createdAt      DateTime          @default(now())
+  cotizacion     Cotizacion        @relation(fields: [cotizacionId], references: [id])
+  usuario        Usuario           @relation(fields: [usuarioId], references: [id])
+
+  @@index([cotizacionId])
 }
 
 model CotizacionItem {
