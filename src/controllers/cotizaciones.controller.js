@@ -73,7 +73,8 @@ exports.crearCotizacion = async (req, res) => {
               : "";
 
             return {
-              productoId: item.productoId,
+              productoId: item.productoId || null,
+              panelId: item.panelId || null,
               cantidad: item.cantidad,
               medida: item.medida || 1,
               medidaAncho: item.medidaAncho || null,
@@ -99,6 +100,7 @@ exports.crearCotizacion = async (req, res) => {
         items: {
           include: {
             producto: true,
+            panel: true,
             adicionales: { include: { adicional: true } },
           },
         },
@@ -117,6 +119,7 @@ exports.crearCotizacion = async (req, res) => {
         items: {
           include: {
             producto: true,
+            panel: true,
             adicionales: { include: { adicional: true } },
           },
         },
@@ -415,7 +418,8 @@ exports.renegociarCotizacion = async (req, res) => {
       await prisma.cotizacionItem.create({
         data: {
           cotizacionId: Number(id),
-          productoId: item.productoId,
+          productoId: item.productoId || null,
+          panelId: item.panelId || null,
           cantidad: item.cantidad,
           medida: item.medida || 1,
           medidaAncho: item.medidaAncho || null,
@@ -453,6 +457,7 @@ exports.renegociarCotizacion = async (req, res) => {
         items: {
           include: {
             producto: true,
+            panel: true,
             adicionales: { include: { adicional: true } },
           },
         },

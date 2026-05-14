@@ -18,6 +18,8 @@ const statsRoutes = require("./routes/stats.routes");
 const usuariosRoutes = require("./routes/usuarios.routes");
 const configuracionRouter = require("./routes/configuracion.routes");
 const solicitudesMargenRoutes = require("./routes/solicitudesMargen.routes");
+const panelesRoutes           = require("./routes/paneles.routes");
+const proveedoresRoutes       = require("./routes/proveedores.routes");
 
 // app.use(cors());
 app.use(express.json());
@@ -31,6 +33,8 @@ app.use("/api/stats", statsRoutes);
 app.use("/api/usuarios", usuariosRoutes);
 app.use("/api/configuracion", configuracionRouter);
 app.use("/api/solicitudes-margen", solicitudesMargenRoutes);
+app.use("/api/paneles",           panelesRoutes);
+app.use("/api/proveedores",       proveedoresRoutes);
 
 // Health check endpoint
 app.get("/api/health", async (req, res) => {

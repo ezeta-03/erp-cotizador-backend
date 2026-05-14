@@ -3,8 +3,9 @@ generator client {
 }
 
 datasource db {
-  provider = "postgresql"
-  url      = env("DATABASE_URL")
+  provider  = "postgresql"
+  url       = env("DATABASE_URL")
+  directUrl = env("DIRECT_URL")
 }
 
 model Configuracion {
@@ -120,7 +121,8 @@ model CotizacionLog {
 model CotizacionItem {
   id           Int                   @id @default(autoincrement())
   cotizacionId Int
-  productoId   Int
+  productoId   Int?
+  panelId      Int?
   cantidad     Float
   medida       Float                 @default(1)
   medidaAncho  Float?
@@ -130,7 +132,8 @@ model CotizacionItem {
   descripcion  String?
   adicionales  CotizacionAdicional[]
   cotizacion   Cotizacion            @relation(fields: [cotizacionId], references: [id])
-  producto     Producto              @relation(fields: [productoId], references: [id])
+  producto     Producto?             @relation(fields: [productoId], references: [id])
+  panel        Panel?                @relation(fields: [panelId], references: [id])
 }
 
 model CotizacionAdicional {
@@ -191,6 +194,71 @@ enum EstadoCotizacion {
   RECHAZADA
   RENEGOCIACION
   FACTURADA
+}
+
+enum EstadoPanel {
+  DISPONIBLE
+  RESERVADO
+  EN_USO
+  MANTENIMIENTO
+}
+
+model Panel {
+  id               Int         @id @default(autoincrement())
+  nombre           String
+  ubicacion        String
+  lat              Float?
+  lng              Float?
+  ancho            Float
+  alto             Float
+  costoProduccion  Float       @default(0)
+  costoInstalacion Float       @default(0)
+  precioMes        Float
+  estado           EstadoPanel @default(DISPONIBLE)
+  activo           Boolean     @default(true)
+  createdAt        DateTime    @default(now())
+  updatedAt        DateTime    @updatedAt
+  items            CotizacionItem[]
+}
+
+enum EstadoCuota {
+  PENDIENTE
+  CANCELADO
+}
+
+model Proveedor {
+  id                  Int               @id @default(autoincrement())
+  nombre              String
+  ciudad              String?
+  ubicacion           String
+  tipoContrato        String
+  elementos           String?
+  inicio              DateTime
+  fin                 DateTime
+  costoMensual        Float
+  costoLuzMes         Float             @default(0)
+  numeroCuenta        String?
+  nombreCuenta        String?
+  relevanciaComercial String            @default("ALTO")
+  razonSocial         String?
+  activo              Boolean           @default(true)
+  createdAt           DateTime          @default(now())
+  updatedAt           DateTime          @updatedAt
+  cuotas              ProveedorCuota[]
+}
+
+model ProveedorCuota {
+  id          Int         @id @default(autoincrement())
+  proveedorId Int
+  numero      Int
+  monto       Float
+  igv         Float
+  fecha       String      @default("")
+  estado      EstadoCuota @default(PENDIENTE)
+  detalle     String?
+  proveedor   Proveedor   @relation(fields: [proveedorId], references: [id])
+
+  @@index([proveedorId])
 }
 
 enum EventoUsuario {
