@@ -51,6 +51,7 @@ model Cliente {
   usuarioId       Int?         @unique
   usuario         Usuario?     @relation(fields: [usuarioId], references: [id])
   cotizaciones    Cotizacion[]
+  reservas        Reserva[]
 }
 
 model Producto {
@@ -197,28 +198,59 @@ enum EstadoCotizacion {
 }
 
 enum EstadoPanel {
-  DISPONIBLE
-  RESERVADO
-  EN_USO
-  MANTENIMIENTO
+  LIBRE
+  LIBRE_EXTERNO
+  OCUPADO
+  REEMPLAZO
+}
+
+enum DistritoPanel {
+  HUANCAYO
+  EL_TAMBO
+  CHILCA
+}
+
+enum TipoPanel {
+  ESTATICO
+  LED
 }
 
 model Panel {
-  id               Int         @id @default(autoincrement())
-  nombre           String
-  ubicacion        String
+  id               Int            @id @default(autoincrement())
+  codigo           String         @unique
+  nombre           String?
+  distrito         DistritoPanel?
+  tipo             TipoPanel      @default(ESTATICO)
+  ubicacion        String?
   lat              Float?
   lng              Float?
-  ancho            Float
-  alto             Float
-  costoProduccion  Float       @default(0)
-  costoInstalacion Float       @default(0)
-  precioMes        Float
-  estado           EstadoPanel @default(DISPONIBLE)
-  activo           Boolean     @default(true)
-  createdAt        DateTime    @default(now())
-  updatedAt        DateTime    @updatedAt
+  ancho            Float?
+  alto             Float?
+  costoProduccion  Float          @default(0)
+  costoInstalacion Float          @default(0)
+  precioMes        Float?
+  estado           EstadoPanel    @default(LIBRE)
+  activo           Boolean        @default(true)
+  createdAt        DateTime       @default(now())
+  updatedAt        DateTime       @updatedAt
   items            CotizacionItem[]
+  reservas         Reserva[]
+}
+
+model Reserva {
+  id             Int         @id @default(autoincrement())
+  panelId        Int
+  clienteId      Int
+  fechaInicio    DateTime
+  fechaFin       DateTime
+  precioMensual  Float
+  estado         EstadoPanel @default(OCUPADO)
+  notas          String?
+  activo         Boolean       @default(true)
+  createdAt      DateTime      @default(now())
+  updatedAt      DateTime      @updatedAt
+  panel          Panel         @relation(fields: [panelId], references: [id])
+  cliente        Cliente       @relation(fields: [clienteId], references: [id])
 }
 
 enum EstadoCuota {

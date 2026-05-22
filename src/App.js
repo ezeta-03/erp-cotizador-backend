@@ -20,6 +20,7 @@ const configuracionRouter = require("./routes/configuracion.routes");
 const solicitudesMargenRoutes = require("./routes/solicitudesMargen.routes");
 const panelesRoutes           = require("./routes/paneles.routes");
 const proveedoresRoutes       = require("./routes/proveedores.routes");
+const reservasRoutes          = require("./routes/reservas.routes");
 
 // app.use(cors());
 app.use(express.json());
@@ -35,6 +36,7 @@ app.use("/api/configuracion", configuracionRouter);
 app.use("/api/solicitudes-margen", solicitudesMargenRoutes);
 app.use("/api/paneles",           panelesRoutes);
 app.use("/api/proveedores",       proveedoresRoutes);
+app.use("/api/reservas",          reservasRoutes);
 
 // Health check endpoint
 app.get("/api/health", async (req, res) => {
