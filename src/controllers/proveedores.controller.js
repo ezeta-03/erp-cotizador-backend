@@ -17,7 +17,7 @@ const generarCuotas = (inicio, fin, costoMensual) => {
   let current = new Date(start.getFullYear(), start.getMonth(), 1);
   let numero  = 1;
 
-  while (current <= end) {
+  while (current < new Date(end.getFullYear(), end.getMonth(), 1)) {
     const monto = parseFloat(Number(costoMensual).toFixed(2));
     const igv   = parseFloat((monto * igvRate).toFixed(2));
     cuotas.push({
