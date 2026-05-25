@@ -2,6 +2,7 @@ const express = require("express");
 const cors = require("cors");
 
 const app = express();
+app.disable('etag'); // evita 304 Not Modified con datos obsoletos
 app.use(
   cors({
     origin: "*", // Permitir cualquier origin para debugging

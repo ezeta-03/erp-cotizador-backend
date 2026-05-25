@@ -8,7 +8,14 @@ const MESES = [
 
 const MESES_CORTOS = ["Ene","Feb","Mar","Abr","May","Jun","Jul","Ago","Sep","Oct","Nov","Dic"];
 
-const conCodigo = (p) => ({ ...p, codigo: `PRV-${String(p.id).padStart(3, "0")}` });
+const getEstadoContrato = (p) =>
+  p.estadoOverride || (new Date(p.fin) >= new Date() ? "VIGENTE" : "VENCIDO");
+
+const conCodigo = (p) => ({
+  ...p,
+  codigo: `PRV-${String(p.id).padStart(3, "0")}`,
+  estadoContrato: getEstadoContrato(p),
+});
 
 const generarCuotas = (inicio, fin, costoMensual) => {
   const cuotas  = [];
@@ -56,61 +63,111 @@ exports.listar = async (req, res) => {
 exports.resumenPagos = async (req, res) => {
   try {
     const anio = parseInt(req.query.anio) || new Date().getFullYear();
+    const gte  = new Date(anio, 0, 1);
+    const lt   = new Date(anio + 1, 0, 1);
 
-    const cuotas = await prisma.proveedorCuota.findMany({
-      where: {
-        estado:    "PENDIENTE",
-        fechaCobro: {
-          gte: new Date(anio, 0, 1),
-          lt:  new Date(anio + 1, 0, 1),
-        },
-      },
-      include: { proveedor: true },
-    });
+    const [todasCuotas, proveedoresActivos] = await Promise.all([
+      prisma.proveedorCuota.findMany({
+        where: { fechaCobro: { gte, lt }, proveedor: { activo: true } },
+        include: { proveedor: true },
+      }),
+      prisma.proveedor.findMany({
+        where: { activo: true },
+        select: { fin: true, estadoOverride: true },
+      }),
+    ]);
 
-    // Agrupa por proveedor, acumula total por mes (0-based)
-    const provsMap = new Map();
-    for (const c of cuotas) {
-      if (!provsMap.has(c.proveedorId)) {
-        provsMap.set(c.proveedorId, {
-          id:       c.proveedorId,
-          codigo:   `PRV-${String(c.proveedorId).padStart(3, "0")}`,
+    const hoy = new Date();
+    const totalProveedores = proveedoresActivos.length;
+    const estadoConteo = { VIGENTE: 0, VENCIDO: 0, CANCELADO: 0, SUSPENDIDO: 0 };
+    for (const p of proveedoresActivos) {
+      const e = p.estadoOverride || (new Date(p.fin) >= hoy ? "VIGENTE" : "VENCIDO");
+      estadoConteo[e] = (estadoConteo[e] || 0) + 1;
+    }
+
+    // Datos mensuales para el gráfico (solo PENDIENTE)
+    const chartMap = new Map();
+    for (const c of todasCuotas.filter(c => c.estado === "PENDIENTE")) {
+      if (!chartMap.has(c.proveedorId)) {
+        chartMap.set(c.proveedorId, {
+          id: c.proveedorId,
+          codigo:    `PRV-${String(c.proveedorId).padStart(3, "0")}`,
           ubicacion: c.proveedor.ubicacion,
-          ciudad:   c.proveedor.ciudad,
-          data:     Array(12).fill(0),
+          ciudad:    c.proveedor.ciudad,
+          data:      Array(12).fill(0),
         });
       }
       const mes = new Date(c.fechaCobro).getMonth();
-      provsMap.get(c.proveedorId).data[mes] += c.monto + c.igv;
+      chartMap.get(c.proveedorId).data[mes] += c.monto + c.igv;
     }
 
-    const datasets = [...provsMap.values()]
+    // Resumen anual por proveedor (PENDIENTE + CANCELADO)
+    const resumenMap = new Map();
+    for (const c of todasCuotas) {
+      if (!resumenMap.has(c.proveedorId)) {
+        resumenMap.set(c.proveedorId, {
+          id: c.proveedorId,
+          codigo:    `PRV-${String(c.proveedorId).padStart(3, "0")}`,
+          ubicacion: c.proveedor.ubicacion,
+          ciudad:    c.proveedor.ciudad,
+          pendiente:       0,
+          cancelado:       0,
+          cuotasPendiente: 0,
+          cuotasCancelado: 0,
+        });
+      }
+      const r     = resumenMap.get(c.proveedorId);
+      const total = c.monto + c.igv;
+      if (c.estado === "PENDIENTE") { r.pendiente += total; r.cuotasPendiente++; }
+      if (c.estado === "CANCELADO") { r.cancelado += total; r.cuotasCancelado++; }
+    }
+
+    const datasets = [...chartMap.values()]
       .sort((a, b) => a.id - b.id)
-      .map((d) => ({ ...d, data: d.data.map((v) => parseFloat(v.toFixed(2))) }));
+      .map(d => ({ ...d, data: d.data.map(v => parseFloat(v.toFixed(2))) }));
+
+    const resumen = [...resumenMap.values()]
+      .sort((a, b) => a.id - b.id)
+      .map(r => ({
+        ...r,
+        pendiente: parseFloat(r.pendiente.toFixed(2)),
+        cancelado: parseFloat(r.cancelado.toFixed(2)),
+      }));
+
+    const totalPendiente = parseFloat(resumen.reduce((s, r) => s + r.pendiente, 0).toFixed(2));
+    const totalCancelado = parseFloat(resumen.reduce((s, r) => s + r.cancelado, 0).toFixed(2));
 
     const meses = MESES_CORTOS.map((label, i) => ({ mes: i + 1, label }));
-
-    res.json({ anio, meses, datasets });
+    res.json({
+      anio, meses, datasets, resumen,
+      totalPendiente, totalCancelado,
+      totalProveedores, estadoConteo,
+    });
   } catch (e) {
     res.status(500).json({ message: "Error al obtener resumen de pagos", error: e.message });
   }
 };
 
-/* ── ALERTAS: cuotas PENDIENTE con fechaCobro en los próximos 7 días ── */
+/* ── ALERTAS: cuotas PENDIENTE en los próximos 15 días, con nivel de urgencia ── */
 exports.alertas = async (req, res) => {
   try {
     const hoy    = new Date();
+    hoy.setHours(0, 0, 0, 0);
     const limite = new Date(hoy);
-    limite.setDate(limite.getDate() + 7);
+    limite.setDate(limite.getDate() + 15);
 
     const cuotas = await prisma.proveedorCuota.findMany({
       where: {
-        estado:    "PENDIENTE",
+        estado:     "PENDIENTE",
         fechaCobro: { gte: hoy, lte: limite },
+        proveedor:  { activo: true },
       },
       include: { proveedor: true },
       orderBy: { fechaCobro: "asc" },
     });
+
+    const umbralRojo = new Date(hoy);
+    umbralRojo.setDate(umbralRojo.getDate() + 7);
 
     res.json(
       cuotas.map((c) => ({
@@ -120,12 +177,13 @@ exports.alertas = async (req, res) => {
         monto:      c.monto,
         igv:        c.igv,
         total:      parseFloat((c.monto + c.igv).toFixed(2)),
+        urgencia:   new Date(c.fechaCobro) <= umbralRojo ? "ROJA" : "AMARILLA",
         proveedor: {
-          id:       c.proveedor.id,
-          codigo:   `PRV-${String(c.proveedor.id).padStart(3, "0")}`,
-          nombre:   c.proveedor.nombre,
+          id:        c.proveedor.id,
+          codigo:    `PRV-${String(c.proveedor.id).padStart(3, "0")}`,
+          nombre:    c.proveedor.nombre,
           ubicacion: c.proveedor.ubicacion,
-          ciudad:   c.proveedor.ciudad,
+          ciudad:    c.proveedor.ciudad,
         },
       }))
     );
@@ -178,14 +236,25 @@ exports.actualizar = async (req, res) => {
       numeroCuenta, nombreCuenta, relevanciaComercial, razonSocial,
     } = req.body;
 
+    const provId     = Number(id);
+    const newInicio  = new Date(inicio);
+    const newCosto   = Number(costoMensual);
+    const igvRate    = 0.18;
+
+    // Leer valores anteriores para detectar cambios
+    const anterior = await prisma.proveedor.findUnique({
+      where: { id: provId },
+      select: { inicio: true, costoMensual: true },
+    });
+
     const proveedor = await prisma.proveedor.update({
-      where: { id: Number(id) },
+      where: { id: provId },
       data: {
         nombre, ciudad: ciudad || null, ubicacion, tipoContrato,
         elementos: elementos || null,
-        inicio: new Date(inicio),
+        inicio: newInicio,
         fin:    new Date(fin),
-        costoMensual:    Number(costoMensual),
+        costoMensual:    newCosto,
         costoLuzMes:     Number(costoLuzMes || 0),
         numeroCuenta:    numeroCuenta || null,
         nombreCuenta:    nombreCuenta || null,
@@ -194,6 +263,35 @@ exports.actualizar = async (req, res) => {
       },
       include: { cuotas: { orderBy: { numero: "asc" } } },
     });
+
+    // Si cambió el inicio o el costo mensual, recalcular cuotas
+    const inicioCambio = anterior && newInicio.getTime() !== new Date(anterior.inicio).getTime();
+    const costoCambio  = anterior && newCosto !== anterior.costoMensual;
+
+    if (inicioCambio || costoCambio) {
+      const dia = newInicio.getUTCDate();
+      for (const c of proveedor.cuotas) {
+        const data = {};
+        if (inicioCambio) {
+          data.fechaCobro = new Date(Date.UTC(
+            newInicio.getUTCFullYear(),
+            newInicio.getUTCMonth() + (c.numero - 1),
+            dia,
+          ));
+        }
+        if (costoCambio) {
+          data.monto = parseFloat(newCosto.toFixed(2));
+          data.igv   = parseFloat((newCosto * igvRate).toFixed(2));
+        }
+        await prisma.proveedorCuota.update({ where: { id: c.id }, data });
+      }
+      // Recargar con cuotas actualizadas
+      const actualizado = await prisma.proveedor.findUnique({
+        where: { id: provId },
+        include: { cuotas: { orderBy: { numero: "asc" } } },
+      });
+      return res.json(conCodigo(actualizado));
+    }
 
     res.json(conCodigo(proveedor));
   } catch (e) {
@@ -216,9 +314,44 @@ exports.actualizarCuota = async (req, res) => {
         ...(fechaCobro !== undefined && { fechaCobro: fechaCobro ? new Date(fechaCobro) : null }),
       },
     });
+
+    // Auto-sync estadoOverride del contrato cuando cambia el estado de una cuota
+    if (estado !== undefined) {
+      const [todasCuotas, prov] = await Promise.all([
+        prisma.proveedorCuota.findMany({ where: { proveedorId: cuota.proveedorId } }),
+        prisma.proveedor.findUnique({ where: { id: cuota.proveedorId }, select: { estadoOverride: true } }),
+      ]);
+      // No sobreescribir si el contrato está suspendido manualmente
+      if (prov.estadoOverride !== "SUSPENDIDO") {
+        const allCanceladas = todasCuotas.length > 0 && todasCuotas.every(c => c.estado === "CANCELADO");
+        await prisma.proveedor.update({
+          where: { id: cuota.proveedorId },
+          data: { estadoOverride: allCanceladas ? "CANCELADO" : null },
+        });
+      }
+    }
+
     res.json(cuota);
   } catch (e) {
     res.status(500).json({ message: "Error al actualizar cuota", error: e.message });
+  }
+};
+
+/* ── CAMBIAR ESTADO DE CONTRATO (manual) ── */
+exports.cambiarEstado = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { estado } = req.body;
+    if (!["SUSPENDIDO", "CANCELADO", null].includes(estado)) {
+      return res.status(400).json({ message: "Estado inválido" });
+    }
+    await prisma.proveedor.update({
+      where: { id: Number(id) },
+      data: { estadoOverride: estado },
+    });
+    res.json({ ok: true });
+  } catch (e) {
+    res.status(500).json({ message: "Error al cambiar estado", error: e.message });
   }
 };
 
