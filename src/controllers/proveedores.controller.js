@@ -52,7 +52,7 @@ exports.listar = async (req, res) => {
   }
 };
 
-/* ── RESUMEN PAGOS POR MES (dashboard) ── */
+/* ── RESUMEN PAGOS POR MES desglosado por proveedor (dashboard) ── */
 exports.resumenPagos = async (req, res) => {
   try {
     const anio = parseInt(req.query.anio) || new Date().getFullYear();
@@ -65,24 +65,32 @@ exports.resumenPagos = async (req, res) => {
           lt:  new Date(anio + 1, 0, 1),
         },
       },
+      include: { proveedor: true },
     });
 
-    const resumen = Array.from({ length: 12 }, (_, i) => ({
-      mes:    i + 1,
-      label:  MESES_CORTOS[i],
-      total:  0,
-      cuotas: 0,
-    }));
-
+    // Agrupa por proveedor, acumula total por mes (0-based)
+    const provsMap = new Map();
     for (const c of cuotas) {
-      const mes = new Date(c.fechaCobro).getMonth(); // 0-based
-      resumen[mes].total  += c.monto + c.igv;
-      resumen[mes].cuotas += 1;
+      if (!provsMap.has(c.proveedorId)) {
+        provsMap.set(c.proveedorId, {
+          id:       c.proveedorId,
+          codigo:   `PRV-${String(c.proveedorId).padStart(3, "0")}`,
+          ubicacion: c.proveedor.ubicacion,
+          ciudad:   c.proveedor.ciudad,
+          data:     Array(12).fill(0),
+        });
+      }
+      const mes = new Date(c.fechaCobro).getMonth();
+      provsMap.get(c.proveedorId).data[mes] += c.monto + c.igv;
     }
 
-    resumen.forEach((r) => { r.total = parseFloat(r.total.toFixed(2)); });
+    const datasets = [...provsMap.values()]
+      .sort((a, b) => a.id - b.id)
+      .map((d) => ({ ...d, data: d.data.map((v) => parseFloat(v.toFixed(2))) }));
 
-    res.json({ anio, meses: resumen });
+    const meses = MESES_CORTOS.map((label, i) => ({ mes: i + 1, label }));
+
+    res.json({ anio, meses, datasets });
   } catch (e) {
     res.status(500).json({ message: "Error al obtener resumen de pagos", error: e.message });
   }
