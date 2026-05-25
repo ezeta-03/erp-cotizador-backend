@@ -274,6 +274,7 @@ model Proveedor {
   relevanciaComercial String            @default("ALTO")
   razonSocial         String?
   activo              Boolean           @default(true)
+  estadoOverride      String?
   createdAt           DateTime          @default(now())
   updatedAt           DateTime          @updatedAt
   cuotas              ProveedorCuota[]
@@ -286,11 +287,13 @@ model ProveedorCuota {
   monto       Float
   igv         Float
   fecha       String      @default("")
+  fechaCobro  DateTime?
   estado      EstadoCuota @default(PENDIENTE)
   detalle     String?
   proveedor   Proveedor   @relation(fields: [proveedorId], references: [id])
 
   @@index([proveedorId])
+  @@index([fechaCobro])
 }
 
 enum EventoUsuario {
