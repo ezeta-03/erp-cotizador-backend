@@ -4,6 +4,8 @@ const allowRoles = require("../middlewares/role.middleware");
 const ctrl       = require("../controllers/proveedores.controller");
 
 router.get   ("/",                       auth, allowRoles("ADMIN", "VENTAS"), ctrl.listar);
+router.get   ("/resumen-pagos",          auth, allowRoles("ADMIN"),           ctrl.resumenPagos);
+router.get   ("/alertas",                auth, allowRoles("ADMIN"),           ctrl.alertas);
 router.post  ("/",                       auth, allowRoles("ADMIN"),           ctrl.crear);
 router.put   ("/:id",                    auth, allowRoles("ADMIN"),           ctrl.actualizar);
 router.patch ("/:id/cuotas/:cuotaId",    auth, allowRoles("ADMIN"),           ctrl.actualizarCuota);

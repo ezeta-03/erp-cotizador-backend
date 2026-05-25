@@ -286,11 +286,13 @@ model ProveedorCuota {
   monto       Float
   igv         Float
   fecha       String      @default("")
+  fechaCobro  DateTime?
   estado      EstadoCuota @default(PENDIENTE)
   detalle     String?
   proveedor   Proveedor   @relation(fields: [proveedorId], references: [id])
 
   @@index([proveedorId])
+  @@index([fechaCobro])
 }
 
 enum EventoUsuario {
