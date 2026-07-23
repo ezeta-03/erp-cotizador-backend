@@ -1,0 +1,2 @@
+-- AlterEnum
+ALTER TYPE "TipoPanel" ADD VALUE IF NOT EXISTS 'MUPI';

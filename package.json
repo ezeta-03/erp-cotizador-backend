@@ -13,6 +13,7 @@
     "seed:all": "npm run seed:parte1 && npm run seed:parte2 && npm run seed:parte3",
     "seed:completo": "node prisma/seed-completo.js",
     "seed:proveedores": "node prisma/seed-proveedores.js",
+    "seed:mupis": "node prisma/seed-mupis.js",
     "test": "echo \"Error: no test specified\" && exit 1",
     "diagnostico-db": "node test-db.js",
     "diagnostico-pdf": "node diagnostico-pdf.js",

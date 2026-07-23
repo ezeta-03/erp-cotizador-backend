@@ -2,7 +2,7 @@ const prisma = require("../config/prisma");
 
 const ESTADOS_VALIDOS  = ["LIBRE", "LIBRE_EXTERNO", "OCUPADO", "REEMPLAZO"];
 const DISTRITOS_VALIDOS = ["HUANCAYO", "EL_TAMBO", "CHILCA"];
-const TIPOS_VALIDOS    = ["ESTATICO", "LED"];
+const TIPOS_VALIDOS    = ["ESTATICO", "LED", "MUPI"];
 
 /* ── helpers ── */
 const toFloat   = (v) => (v != null && v !== "" ? parseFloat(v)  : null);

@@ -213,6 +213,7 @@ enum DistritoPanel {
 enum TipoPanel {
   ESTATICO
   LED
+  MUPI
 }
 
 model Panel {
