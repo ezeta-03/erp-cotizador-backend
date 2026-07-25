@@ -125,6 +125,7 @@ model CotizacionItem {
   cotizacionId Int
   productoId   Int?
   panelId      Int?
+  nombre       String?
   cantidad     Float
   medida       Float                 @default(1)
   medidaAncho  Float?

@@ -75,6 +75,7 @@ exports.crearCotizacion = async (req, res) => {
             return {
               productoId: item.productoId || null,
               panelId: item.panelId || null,
+              nombre: item.nombre || null,
               cantidad: item.cantidad,
               medida: item.medida || 1,
               medidaAncho: item.medidaAncho || null,
@@ -197,7 +198,7 @@ exports.ultimaCotizacionCliente = async (req, res) => {
     const cotizacion = await prisma.cotizacion.findFirst({
       where: { clienteId: usuario.cliente.id },
       include: {
-        items: { include: { producto: true } },
+        items: { include: { producto: true, panel: true } },
       },
       orderBy: { createdAt: "desc" },
     });
@@ -361,9 +362,11 @@ exports.misCotizaciones = async (req, res) => {
     const cotizaciones = await prisma.cotizacion.findMany({
       where: { clienteId: usuario.cliente.id },
       include: {
+        cliente: true,
         items: {
           include: {
             producto: true,
+            panel: true,
             adicionales: { include: { adicional: true } },
           },
         },
@@ -422,6 +425,7 @@ exports.renegociarCotizacion = async (req, res) => {
           cotizacionId: Number(id),
           productoId: item.productoId || null,
           panelId: item.panelId || null,
+          nombre: item.nombre || null,
           cantidad: item.cantidad,
           medida: item.medida || 1,
           medidaAncho: item.medidaAncho || null,
@@ -493,6 +497,7 @@ exports.generarPdf = async (req, res) => {
         items: {
           include: {
             producto: true,
+            panel: true,
             adicionales: { include: { adicional: true } },
           },
         },
@@ -527,7 +532,7 @@ exports.generarPdf = async (req, res) => {
 
     res.set({
       "Content-Type": "application/pdf",
-      "Content-Disposition": `attachment; filename=COT-${cotizacion.numero}.pdf`,
+      "Content-Disposition": `attachment; filename=${cotizacion.numero}.pdf`,
     });
     res.send(pdf);
   } catch (error) {

@@ -14,7 +14,10 @@ module.exports = (cotizacion) => {
 
   const itemsHtml = items && items.length > 0
     ? items.map((item, i) => {
-        const nombre = item.producto?.nombre || item.producto?.servicio || item.producto?.material || "Producto";
+        const nombre = item.nombre
+          || item.producto?.nombre || item.producto?.servicio || item.producto?.material
+          || (item.panel ? `${item.panel.codigo} — ${item.panel.nombre || item.panel.ubicacion || ""}`.trim().replace(/—\s*$/, "").trim() : null)
+          || "Producto";
         const glosa  = item.descripcion || item.glosa || "";
         const unidad = item.producto?.unidad || "";
         let medidaStr = null;

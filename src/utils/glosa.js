@@ -1,5 +1,7 @@
 // utils/glosa.js
 function generarGlosa(producto, adicionales) {
+  if (!producto) return "";
+
   let partes = [producto.servicio || producto.nombre];
 
   adicionales.forEach((a) => {
