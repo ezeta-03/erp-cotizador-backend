@@ -31,10 +31,27 @@ exports.listar = async (req, res) => {
   }
 };
 
+/* ── Listar reservas generadas desde una cotización ── */
+exports.porCotizacion = async (req, res) => {
+  try {
+    const cotizacionId = parseInt(req.params.cotizacionId);
+
+    const reservas = await prisma.reserva.findMany({
+      where: { cotizacionId, activo: true },
+      include: INCLUDE,
+      orderBy: { createdAt: "asc" },
+    });
+
+    res.json(reservas);
+  } catch (e) {
+    res.status(500).json({ message: "Error al listar reservas de la cotización", error: e.message });
+  }
+};
+
 /* ── Crear ── */
 exports.crear = async (req, res) => {
   try {
-    const { panelId, clienteId, fechaInicio, fechaFin, precioMensual, estado, notas } = req.body;
+    const { panelId, clienteId, fechaInicio, fechaFin, precioMensual, estado, notas, cotizacionId } = req.body;
 
     if (!panelId || !clienteId || !fechaInicio || !fechaFin || !precioMensual)
       return res.status(400).json({ message: "Panel, cliente, fechas y precio son obligatorios" });
@@ -46,6 +63,7 @@ exports.crear = async (req, res) => {
       data: {
         panelId:       parseInt(panelId),
         clienteId:     parseInt(clienteId),
+        cotizacionId:  cotizacionId ? parseInt(cotizacionId) : null,
         fechaInicio:   new Date(fechaInicio),
         fechaFin:      new Date(fechaFin),
         precioMensual: parseFloat(precioMensual),

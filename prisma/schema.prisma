@@ -103,6 +103,7 @@ model Cotizacion {
   usuario             Usuario          @relation(fields: [usuarioId], references: [id])
   items               CotizacionItem[]
   log                 CotizacionLog[]
+  reservas            Reserva[]
 }
 
 model CotizacionLog {
@@ -242,6 +243,7 @@ model Reserva {
   id             Int         @id @default(autoincrement())
   panelId        Int
   clienteId      Int
+  cotizacionId   Int?
   fechaInicio    DateTime
   fechaFin       DateTime
   precioMensual  Float
@@ -252,6 +254,7 @@ model Reserva {
   updatedAt      DateTime      @updatedAt
   panel          Panel         @relation(fields: [panelId], references: [id])
   cliente        Cliente       @relation(fields: [clienteId], references: [id])
+  cotizacion     Cotizacion?   @relation(fields: [cotizacionId], references: [id])
 }
 
 enum EstadoCuota {

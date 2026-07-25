@@ -167,6 +167,7 @@ exports.listarCotizaciones = async (req, res) => {
         items: {
           include: {
             producto: true,
+            panel: true,
             adicionales: { include: { adicional: true } },
           },
         },
@@ -298,6 +299,7 @@ exports.obtenerCotizacion = async (req, res) => {
         items: {
           include: {
             producto: true,
+            panel: true,
             adicionales: { include: { adicional: true } },
           },
         },
