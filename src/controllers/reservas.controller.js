@@ -55,6 +55,11 @@ exports.crear = async (req, res) => {
       include: INCLUDE,
     });
 
+    await prisma.panel.update({
+      where: { id: reserva.panelId },
+      data: { estado: reserva.estado },
+    });
+
     res.status(201).json(reserva);
   } catch (e) {
     res.status(500).json({ message: "Error al crear reserva", error: e.message });
@@ -82,6 +87,11 @@ exports.actualizar = async (req, res) => {
       include: INCLUDE,
     });
 
+    await prisma.panel.update({
+      where: { id: reserva.panelId },
+      data: { estado: reserva.estado },
+    });
+
     res.json(reserva);
   } catch (e) {
     res.status(500).json({ message: "Error al actualizar reserva", error: e.message });
@@ -91,10 +101,29 @@ exports.actualizar = async (req, res) => {
 /* ── Eliminar (soft) ── */
 exports.eliminar = async (req, res) => {
   try {
-    await prisma.reserva.update({
-      where: { id: parseInt(req.params.id) },
-      data: { activo: false },
+    const id = parseInt(req.params.id);
+
+    const reserva = await prisma.reserva.findUnique({ where: { id } });
+    if (!reserva) return res.status(404).json({ message: "Reserva no encontrada" });
+
+    await prisma.reserva.update({ where: { id }, data: { activo: false } });
+
+    const ahora = new Date();
+    const vigente = await prisma.reserva.findFirst({
+      where: {
+        panelId:     reserva.panelId,
+        activo:      true,
+        fechaInicio: { lte: ahora },
+        fechaFin:    { gte: ahora },
+      },
+      orderBy: { fechaInicio: "desc" },
     });
+
+    await prisma.panel.update({
+      where: { id: reserva.panelId },
+      data: { estado: vigente ? vigente.estado : "LIBRE" },
+    });
+
     res.json({ ok: true });
   } catch (e) {
     res.status(500).json({ message: "Error al eliminar reserva", error: e.message });
