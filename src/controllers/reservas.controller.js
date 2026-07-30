@@ -56,6 +56,11 @@ exports.crear = async (req, res) => {
     if (!panelId || !clienteId || !fechaInicio || !fechaFin || !precioMensual)
       return res.status(400).json({ message: "Panel, cliente, fechas y precio son obligatorios" });
 
+    const panel = await prisma.panel.findUnique({ where: { id: parseInt(panelId) } });
+    if (!panel || !panel.activo) {
+      return res.status(400).json({ message: "El panel/mupi no existe o está desactivado" });
+    }
+
     const nuevaInicio = new Date(fechaInicio);
     const nuevaFin = new Date(fechaFin);
 

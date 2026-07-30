@@ -10,7 +10,7 @@ router.post("/", auth, allowRoles("ADMIN", "VENTAS"), clientesController.crear);
 router.get("/", auth, allowRoles("ADMIN", "VENTAS"), clientesController.listar);
 
 // Actualizar cliente
-router.put("/:id", auth, allowRoles("ADMIN"), clientesController.actualizar);
+router.put("/:id", auth, allowRoles("ADMIN", "VENTAS"), clientesController.actualizar);
 
 // Desactivar cliente (soft-delete)
 router.delete("/:id", auth, allowRoles("ADMIN"), clientesController.eliminar);

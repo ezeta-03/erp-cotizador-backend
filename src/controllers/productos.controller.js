@@ -141,16 +141,23 @@ exports.eliminarTodos = async (req, res) => {
 
 // ── Parsear líneas del CSV → array de {nombre, precio} ───────────────────────
 function parseLineasCSV(buffer) {
-  // Soporta UTF-8 con/sin BOM y Latin-1 (Excel Windows)
+  // Soporta UTF-8 con/sin BOM; si aparecen caracteres de reemplazo (U+FFFD)
+  // es que el archivo no era UTF-8 válido (típico de "CSV" exportado como
+  // ANSI/Windows-1252 desde Excel) — se reintenta como latin1.
   let texto = buffer.toString("utf-8");
   if (texto.charCodeAt(0) === 0xfeff) texto = texto.slice(1); // strip BOM
+  if (texto.includes("�")) texto = buffer.toString("latin1");
 
   const lineas = texto.split(/\r?\n/).map((l) => l.trim()).filter(Boolean);
   if (lineas.length < 2) return { filas: [], error: "Archivo vacío o sin datos" };
 
   const filas = [];
+  const nombresVistos = new Set();
+
   lineas.slice(1).forEach((linea, i) => {
-    const partes = linea.split(";");
+    let partes = linea.split(";");
+    if (partes.length < 2 && linea.includes(",")) partes = linea.split(","); // CSV separado por comas
+
     const nombre = partes[0]?.trim() ?? "";
     const precioRaw = partes[1]?.trim() ?? "";
 
@@ -159,12 +166,20 @@ function parseLineasCSV(buffer) {
       return;
     }
 
+    if (nombresVistos.has(nombre)) {
+      filas.push({ fila: i + 2, nombre, precio: null, estado: "omitido", motivo: "Nombre duplicado en el archivo (se usó la primera aparición)" });
+      return;
+    }
+
     const precioStr = precioRaw.replace(/S\/\s*/i, "").replace(",", ".").trim();
     const precio = parseFloat(precioStr);
 
     if (isNaN(precio)) {
       filas.push({ fila: i + 2, nombre, precio: null, estado: "error", motivo: `Precio inválido: "${precioRaw}"` });
+    } else if (precio <= 0) {
+      filas.push({ fila: i + 2, nombre, precio: null, estado: "error", motivo: `El precio debe ser mayor a cero: "${precioRaw}"` });
     } else {
+      nombresVistos.add(nombre);
       filas.push({ fila: i + 2, nombre, precio, estado: "valido" });
     }
   });

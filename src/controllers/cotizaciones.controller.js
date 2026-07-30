@@ -331,24 +331,30 @@ exports.responderCotizacion = async (req, res) => {
 ========================= */
 exports.facturarCotizacion = async (req, res) => {
   try {
-    const { id } = req.params;
+    const cotizacionId = Number(req.params.id);
 
-    const cotizacion = await prisma.cotizacion.findUnique({ where: { id: Number(id) } });
+    const cotizacion = await prisma.cotizacion.findUnique({ where: { id: cotizacionId } });
     if (!cotizacion) return res.status(404).json({ message: "Cotización no encontrada" });
     if (req.user.role === "VENTAS" && cotizacion.usuarioId !== req.user.id) {
       return res.status(403).json({ message: "No autorizado" });
     }
-    if (cotizacion.estado !== "APROBADA") {
-      return res.status(400).json({ message: "Solo se puede facturar una cotización aprobada" });
-    }
 
-    const updated = await prisma.cotizacion.update({
-      where: { id: Number(id) },
+    // updateMany con el estado en el WHERE: si dos peticiones llegan casi a
+    // la vez, solo una encuentra la fila todavía en APROBADA y la cambia; la
+    // otra recibe count=0 y el 400 de abajo, en vez de facturar dos veces.
+    const { count } = await prisma.cotizacion.updateMany({
+      where: { id: cotizacionId, estado: "APROBADA" },
       data: { estado: "FACTURADA", facturadaAt: new Date() },
     });
 
+    if (count === 0) {
+      return res.status(400).json({ message: "Solo se puede facturar una cotización aprobada" });
+    }
+
+    const updated = await prisma.cotizacion.findUnique({ where: { id: cotizacionId } });
+
     await registrarLog(prisma, {
-      cotizacionId: Number(id),
+      cotizacionId,
       usuarioId: req.user.id,
       estadoAnterior: "APROBADA",
       estadoNuevo: "FACTURADA",
