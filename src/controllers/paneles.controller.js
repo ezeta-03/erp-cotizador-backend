@@ -130,10 +130,21 @@ exports.importar = async (req, res) => {
       const codigo = fila.codigo?.trim().toUpperCase();
       if (!codigo) continue;
 
+      const tipo = TIPOS_VALIDOS.includes(fila.tipo) ? fila.tipo : "ESTATICO";
+
+      const existente = await prisma.panel.findUnique({ where: { codigo } });
+      if (existente && existente.tipo !== tipo) {
+        resultados.errores.push({
+          codigo,
+          error: `Ya existe como tipo ${existente.tipo}; la importación no puede cambiarlo a ${tipo}`,
+        });
+        continue;
+      }
+
       const data = {
         nombre:           fila.nombre   || null,
         distrito:         DISTRITOS_VALIDOS.includes(fila.distrito) ? fila.distrito : null,
-        tipo:             TIPOS_VALIDOS.includes(fila.tipo) ? fila.tipo : "ESTATICO",
+        tipo,
         ubicacion:        fila.ubicacion || null,
         lat:              toFloat(fila.lat),
         lng:              toFloat(fila.lng),
@@ -152,7 +163,8 @@ exports.importar = async (req, res) => {
           update: data,
           create: { codigo, ...data },
         });
-        resultados.creados++;
+        if (existente) resultados.actualizados++;
+        else resultados.creados++;
       } catch (err) {
         resultados.errores.push({ codigo, error: err.message });
       }

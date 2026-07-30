@@ -17,21 +17,30 @@ const conCodigo = (p) => ({
   estadoContrato: getEstadoContrato(p),
 });
 
+// Meses de calendario entre dos fechas (mes de inicio inclusive, mes de fin
+// exclusivo, mínimo 1 mes) — misma convención que Ocupación, para que un
+// contrato corto dentro de un solo mes calendario no genere 0 cuotas.
+const totalMesesEntre = (inicio, fin) => {
+  const s = new Date(inicio);
+  const e = new Date(fin);
+  const inicioAbs = s.getUTCFullYear() * 12 + s.getUTCMonth();
+  const finAbs = Math.max(inicioAbs + 1, e.getUTCFullYear() * 12 + e.getUTCMonth());
+  return finAbs - inicioAbs;
+};
+
 const generarCuotas = (inicio, fin, costoMensual) => {
   const cuotas  = [];
   const start   = new Date(inicio);
-  const end     = new Date(fin);
   const igvRate = 0.18;
   const diaInicio = start.getUTCDate();
+  const totalMeses = totalMesesEntre(inicio, fin);
 
-  let current = new Date(start.getUTCFullYear(), start.getUTCMonth(), 1);
-  let numero  = 1;
-
-  while (current < new Date(end.getUTCFullYear(), end.getUTCMonth(), 1)) {
+  for (let i = 0; i < totalMeses; i++) {
+    const current = new Date(start.getUTCFullYear(), start.getUTCMonth() + i, 1);
     const monto = parseFloat(Number(costoMensual).toFixed(2));
     const igv   = parseFloat((monto * igvRate).toFixed(2));
     cuotas.push({
-      numero,
+      numero: i + 1,
       monto,
       igv,
       fecha:      `PRIMERA SEMANA ${MESES[current.getMonth()]} ${current.getFullYear()}`,
@@ -39,8 +48,6 @@ const generarCuotas = (inicio, fin, costoMensual) => {
       estado:     "PENDIENTE",
       detalle:    null,
     });
-    current.setMonth(current.getMonth() + 1);
-    numero++;
   }
   return cuotas;
 };
@@ -238,13 +245,14 @@ exports.actualizar = async (req, res) => {
 
     const provId     = Number(id);
     const newInicio  = new Date(inicio);
+    const newFin     = new Date(fin);
     const newCosto   = Number(costoMensual);
     const igvRate    = 0.18;
 
     // Leer valores anteriores para detectar cambios
     const anterior = await prisma.proveedor.findUnique({
       where: { id: provId },
-      select: { inicio: true, costoMensual: true },
+      select: { inicio: true, fin: true, costoMensual: true },
     });
 
     const proveedor = await prisma.proveedor.update({
@@ -264,8 +272,9 @@ exports.actualizar = async (req, res) => {
       include: { cuotas: { orderBy: { numero: "asc" } } },
     });
 
-    // Si cambió el inicio o el costo mensual, recalcular cuotas
+    // Si cambió el inicio, el fin o el costo mensual, recalcular cuotas
     const inicioCambio = anterior && newInicio.getTime() !== new Date(anterior.inicio).getTime();
+    const finCambio     = anterior && newFin.getTime() !== new Date(anterior.fin).getTime();
     const costoCambio  = anterior && newCosto !== anterior.costoMensual;
 
     if (inicioCambio || costoCambio) {
@@ -285,6 +294,40 @@ exports.actualizar = async (req, res) => {
         }
         await prisma.proveedorCuota.update({ where: { id: c.id }, data });
       }
+    }
+
+    if (finCambio) {
+      const nuevoTotal = totalMesesEntre(newInicio, newFin);
+      const dia = newInicio.getUTCDate();
+
+      if (nuevoTotal > proveedor.cuotas.length) {
+        const nuevasCuotas = [];
+        for (let n = proveedor.cuotas.length + 1; n <= nuevoTotal; n++) {
+          const current = new Date(newInicio.getUTCFullYear(), newInicio.getUTCMonth() + (n - 1), 1);
+          const monto = parseFloat(newCosto.toFixed(2));
+          const igv = parseFloat((newCosto * igvRate).toFixed(2));
+          nuevasCuotas.push({
+            proveedorId: provId,
+            numero: n,
+            monto,
+            igv,
+            fecha: `PRIMERA SEMANA ${MESES[current.getMonth()]} ${current.getFullYear()}`,
+            fechaCobro: new Date(current.getFullYear(), current.getMonth(), dia),
+            estado: "PENDIENTE",
+            detalle: null,
+          });
+        }
+        await prisma.proveedorCuota.createMany({ data: nuevasCuotas });
+      } else if (nuevoTotal < proveedor.cuotas.length) {
+        // Solo se quitan cuotas sobrantes que sigan PENDIENTE (nunca una ya cancelada/pagada)
+        const sobrantes = proveedor.cuotas.slice(nuevoTotal).filter((c) => c.estado === "PENDIENTE");
+        if (sobrantes.length) {
+          await prisma.proveedorCuota.deleteMany({ where: { id: { in: sobrantes.map((c) => c.id) } } });
+        }
+      }
+    }
+
+    if (inicioCambio || costoCambio || finCambio) {
       // Recargar con cuotas actualizadas
       const actualizado = await prisma.proveedor.findUnique({
         where: { id: provId },

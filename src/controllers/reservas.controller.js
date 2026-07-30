@@ -56,8 +56,26 @@ exports.crear = async (req, res) => {
     if (!panelId || !clienteId || !fechaInicio || !fechaFin || !precioMensual)
       return res.status(400).json({ message: "Panel, cliente, fechas y precio son obligatorios" });
 
-    if (new Date(fechaFin) <= new Date(fechaInicio))
+    const nuevaInicio = new Date(fechaInicio);
+    const nuevaFin = new Date(fechaFin);
+
+    if (nuevaFin <= nuevaInicio)
       return res.status(400).json({ message: "La fecha de fin debe ser posterior al inicio" });
+
+    const solapada = await prisma.reserva.findFirst({
+      where: {
+        panelId: parseInt(panelId),
+        activo: true,
+        fechaInicio: { lte: nuevaFin },
+        fechaFin: { gte: nuevaInicio },
+      },
+      include: { cliente: { select: { nombreComercial: true } } },
+    });
+    if (solapada) {
+      return res.status(409).json({
+        message: `El panel ya está reservado para ${solapada.cliente.nombreComercial} del ${solapada.fechaInicio.toISOString().slice(0, 10)} al ${solapada.fechaFin.toISOString().slice(0, 10)}`,
+      });
+    }
 
     const reserva = await prisma.reserva.create({
       data: {
@@ -87,13 +105,38 @@ exports.crear = async (req, res) => {
 /* ── Actualizar ── */
 exports.actualizar = async (req, res) => {
   try {
+    const id = parseInt(req.params.id);
     const { clienteId, fechaInicio, fechaFin, precioMensual, estado, notas } = req.body;
 
-    if (fechaInicio && fechaFin && new Date(fechaFin) <= new Date(fechaInicio))
+    const actual = await prisma.reserva.findUnique({ where: { id } });
+    if (!actual) return res.status(404).json({ message: "Reserva no encontrada" });
+
+    const nuevaInicio = fechaInicio ? new Date(fechaInicio) : actual.fechaInicio;
+    const nuevaFin = fechaFin ? new Date(fechaFin) : actual.fechaFin;
+
+    if (nuevaFin <= nuevaInicio)
       return res.status(400).json({ message: "La fecha de fin debe ser posterior al inicio" });
 
+    if (fechaInicio || fechaFin) {
+      const solapada = await prisma.reserva.findFirst({
+        where: {
+          id: { not: id },
+          panelId: actual.panelId,
+          activo: true,
+          fechaInicio: { lte: nuevaFin },
+          fechaFin: { gte: nuevaInicio },
+        },
+        include: { cliente: { select: { nombreComercial: true } } },
+      });
+      if (solapada) {
+        return res.status(409).json({
+          message: `El panel ya está reservado para ${solapada.cliente.nombreComercial} del ${solapada.fechaInicio.toISOString().slice(0, 10)} al ${solapada.fechaFin.toISOString().slice(0, 10)}`,
+        });
+      }
+    }
+
     const reserva = await prisma.reserva.update({
-      where: { id: parseInt(req.params.id) },
+      where: { id },
       data: {
         clienteId:     clienteId     ? parseInt(clienteId) : undefined,
         fechaInicio:   fechaInicio   ? new Date(fechaInicio) : undefined,

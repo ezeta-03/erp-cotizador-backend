@@ -401,83 +401,88 @@ exports.renegociarCotizacion = async (req, res) => {
       return res.status(403).json({ message: "No autorizado" });
     }
 
-    const existingItems = await prisma.cotizacionItem.findMany({
-      where: { cotizacionId: Number(id) },
-      select: { id: true },
-    });
-    const itemIds = existingItems.map((i) => i.id);
-    if (itemIds.length > 0) {
-      await prisma.cotizacionAdicional.deleteMany({ where: { cotizacionItemId: { in: itemIds } } });
-      await prisma.cotizacionItem.deleteMany({ where: { cotizacionId: Number(id) } });
-    }
-
     const IGV_RATE = 0.18;
-    let valorVenta = 0;
 
-    for (const item of items) {
-      const precioFinal = Number(item.precio);
-      const subtotal = precioFinal * item.cantidad;
-      valorVenta += subtotal;
-
-      const glosa = item.adicionales
-        ? item.adicionales.filter((a) => a.seleccionado).map((a) => `con ${a.nombre}`).join(", ")
-        : "";
-
-      await prisma.cotizacionItem.create({
-        data: {
-          cotizacionId: Number(id),
-          productoId: item.productoId || null,
-          panelId: item.panelId || null,
-          nombre: item.nombre || null,
-          cantidad: item.cantidad,
-          medida: item.medida || 1,
-          medidaAncho: item.medidaAncho || null,
-          medidaAlto: item.medidaAlto || null,
-          precio: precioFinal,
-          subtotal,
-          descripcion: item.descripcion || glosa,
-          adicionales: item.adicionales?.length
-            ? {
-                create: item.adicionales.map((a) => ({
-                  adicionalId: a.id,
-                  seleccionado: a.seleccionado,
-                  precio: Number(a.precio),
-                })),
-              }
-            : undefined,
-        },
+    const updated = await prisma.$transaction(async (tx) => {
+      const existingItems = await tx.cotizacionItem.findMany({
+        where: { cotizacionId: Number(id) },
+        select: { id: true },
       });
-    }
+      const itemIds = existingItems.map((i) => i.id);
+      if (itemIds.length > 0) {
+        await tx.cotizacionAdicional.deleteMany({ where: { cotizacionItemId: { in: itemIds } } });
+        await tx.cotizacionItem.deleteMany({ where: { cotizacionId: Number(id) } });
+      }
 
-    const igvFlag = conIgv !== undefined ? Boolean(conIgv) : cotizacion.conIgv;
-    const total = parseFloat((igvFlag ? valorVenta * (1 + IGV_RATE) : valorVenta).toFixed(2));
+      let valorVenta = 0;
 
-    const updated = await prisma.cotizacion.update({
-      where: { id: Number(id) },
-      data: {
-        estado: "PENDIENTE",
-        respuestaComentario: null,
-        respondidaAt: null,
-        total,
-        conIgv: igvFlag,
-      },
-      include: {
-        cliente: true,
-        items: {
-          include: {
-            producto: true,
-            panel: true,
-            adicionales: { include: { adicional: true } },
+      for (const item of items) {
+        const precioFinal = Number(item.precio);
+        const subtotal = precioFinal * item.cantidad;
+        valorVenta += subtotal;
+
+        const glosa = item.adicionales
+          ? item.adicionales.filter((a) => a.seleccionado).map((a) => `con ${a.nombre}`).join(", ")
+          : "";
+
+        await tx.cotizacionItem.create({
+          data: {
+            cotizacionId: Number(id),
+            productoId: item.productoId || null,
+            panelId: item.panelId || null,
+            nombre: item.nombre || null,
+            cantidad: item.cantidad,
+            medida: item.medida || 1,
+            medidaAncho: item.medidaAncho || null,
+            medidaAlto: item.medidaAlto || null,
+            precio: precioFinal,
+            subtotal,
+            descripcion: item.descripcion || glosa,
+            adicionales: item.adicionales?.length
+              ? {
+                  create: item.adicionales.map((a) => ({
+                    adicionalId: a.id,
+                    seleccionado: a.seleccionado,
+                    precio: Number(a.precio),
+                  })),
+                }
+              : undefined,
+          },
+        });
+      }
+
+      const igvFlag = conIgv !== undefined ? Boolean(conIgv) : cotizacion.conIgv;
+      const total = parseFloat((igvFlag ? valorVenta * (1 + IGV_RATE) : valorVenta).toFixed(2));
+
+      const result = await tx.cotizacion.update({
+        where: { id: Number(id) },
+        data: {
+          estado: "PENDIENTE",
+          respuestaComentario: null,
+          respondidaAt: null,
+          total,
+          conIgv: igvFlag,
+        },
+        include: {
+          cliente: true,
+          items: {
+            include: {
+              producto: true,
+              panel: true,
+              adicionales: { include: { adicional: true } },
+            },
           },
         },
-      },
-    });
+      });
 
-    await registrarLog(prisma, {
-      cotizacionId: Number(id),
-      usuarioId: req.user.id,
-      estadoAnterior: "RENEGOCIACION",
-      estadoNuevo: "PENDIENTE",
+      await registrarLog(tx, {
+        cotizacionId: Number(id),
+        usuarioId: req.user.id,
+        estadoAnterior: "RENEGOCIACION",
+        estadoNuevo: "PENDIENTE",
+      });
+
+      return result;
     });
 
     res.json(updated);

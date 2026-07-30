@@ -149,6 +149,18 @@ exports.invitarCliente = async (req, res) => {
       return res.status(400).json({ message: "Cliente inválido" });
     }
 
+    // Si este cliente ya está vinculado a otra cuenta, no la reemplazamos
+    // silenciosamente al reinvitar con un correo distinto (dejaría huérfana
+    // la cuenta anterior, que seguiría activa pero sin cliente asociado).
+    if (cliente.usuarioId) {
+      const usuarioActual = await prisma.usuario.findUnique({ where: { id: cliente.usuarioId } });
+      if (usuarioActual && usuarioActual.email !== email) {
+        return res.status(400).json({
+          message: `Este cliente ya está vinculado a la cuenta ${usuarioActual.email}. Desactívala primero si quieres reemplazarla.`,
+        });
+      }
+    }
+
     // Verificar usuario existente
     const usuarioExistente = await prisma.usuario.findUnique({
       where: { email },
@@ -165,6 +177,21 @@ exports.invitarCliente = async (req, res) => {
         return res
           .status(400)
           .json({ message: "El usuario ya tiene una cuenta activa" });
+      }
+
+      // No reciclar cuentas inactivas de otro rol (ex-empleados, etc.)
+      if (usuarioExistente.role !== "CLIENTE") {
+        return res.status(400).json({
+          message: `Ese correo ya pertenece a una cuenta de rol ${usuarioExistente.role}. Usa otro correo para invitar a este cliente.`,
+        });
+      }
+
+      // Si ese correo ya está pendiente de activación para OTRO cliente, no lo reutilizamos
+      const otroCliente = await prisma.cliente.findUnique({ where: { usuarioId: usuarioExistente.id } });
+      if (otroCliente && otroCliente.id !== clienteId) {
+        return res.status(400).json({
+          message: "Ese correo ya está pendiente de activación para otro cliente.",
+        });
       }
 
       // Reinvitar usuario inactivo

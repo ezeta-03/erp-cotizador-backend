@@ -1,6 +1,7 @@
 const jwt = require("jsonwebtoken");
+const prisma = require("../config/prisma");
 
-module.exports = (req, res, next) => {
+module.exports = async (req, res, next) => {
   const authHeader = req.headers.authorization;
 
   let token = authHeader?.split(" ")[1];
@@ -16,6 +17,15 @@ module.exports = (req, res, next) => {
 
   try {
     const decoded = jwt.verify(token, process.env.JWT_SECRET);
+
+    const usuario = await prisma.usuario.findUnique({
+      where: { id: decoded.id },
+      select: { activo: true },
+    });
+    if (!usuario || !usuario.activo) {
+      return res.status(401).json({ message: "Cuenta desactivada" });
+    }
+
     req.user = decoded;
     next();
   } catch {
