@@ -1,16 +1,7 @@
 const jwt = require("jsonwebtoken");
 const prisma = require("../config/prisma");
 
-module.exports = async (req, res, next) => {
-  const authHeader = req.headers.authorization;
-
-  let token = authHeader?.split(" ")[1];
-
-  // ✅ permitir token por query (PDF)
-  if (!token && req.query.token) {
-    token = req.query.token;
-  }
-
+async function verificarToken(token, req, res, next) {
   if (!token) {
     return res.status(401).json({ message: "No token" });
   }
@@ -31,4 +22,19 @@ module.exports = async (req, res, next) => {
   } catch {
     res.status(401).json({ message: "Token inválido" });
   }
+}
+
+module.exports = async (req, res, next) => {
+  const authHeader = req.headers.authorization;
+  const token = authHeader?.split(" ")[1];
+  await verificarToken(token, req, res, next);
+};
+
+// Variante que además acepta el token por query string (?token=...).
+// Solo debe usarse en rutas abiertas directamente por el navegador (ej. descarga de PDF),
+// donde no es posible enviar un header Authorization.
+module.exports.conQueryToken = async (req, res, next) => {
+  const authHeader = req.headers.authorization;
+  const token = authHeader?.split(" ")[1] || req.query.token;
+  await verificarToken(token, req, res, next);
 };

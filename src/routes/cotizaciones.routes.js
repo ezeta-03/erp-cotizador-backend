@@ -79,10 +79,10 @@ router.post(
   controller.facturarCotizacion
 );
 
-// Descargar PDF
+// Descargar PDF (acepta token por query string porque se abre como link directo del navegador)
 router.get(
   "/:id/pdf",
-  auth,
+  auth.conQueryToken,
   allowRoles("ADMIN", "VENTAS", "CONTABLE", "CLIENTE"),
   controller.generarPdf
 );

@@ -25,7 +25,6 @@ exports.getEstadisticasCotizaciones = async (req, res) => {
       PENDIENTE:     { count: 0, total: 0 },
       APROBADA:      { count: 0, total: 0 },
       RENEGOCIACION: { count: 0, total: 0 },
-      RECHAZADA:     { count: 0, total: 0 },
       FACTURADA:     { count: 0, total: 0 },
     };
 
