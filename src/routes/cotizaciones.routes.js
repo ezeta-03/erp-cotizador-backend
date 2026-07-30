@@ -80,7 +80,12 @@ router.post(
 );
 
 // Descargar PDF
-router.get("/:id/pdf", auth, controller.generarPdf);
+router.get(
+  "/:id/pdf",
+  auth,
+  allowRoles("ADMIN", "VENTAS", "CONTABLE", "CLIENTE"),
+  controller.generarPdf
+);
 
 // Log de cambios de estado
 router.get(

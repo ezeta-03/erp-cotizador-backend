@@ -35,7 +35,7 @@ exports.listar = async (req, res) => {
     const clientes = await prisma.cliente.findMany({
       orderBy: { id: "desc" },
       include: {
-        usuario: { select: { id: true, activo: true, activationToken: true } },
+        usuario: { select: { id: true, activo: true } },
       },
     });
     res.json(clientes);
@@ -327,8 +327,12 @@ exports.getActividadClientes = async (req, res) => {
 exports.actividadesClientes = async (req, res) => {
   try {
     const clienteId = parseInt(req.params.id, 10);
+    const where = { clienteId };
+    if (req.user.role === "VENTAS") {
+      where.usuarioId = req.user.id;
+    }
     const cotizaciones = await prisma.cotizacion.findMany({
-      where: { clienteId },
+      where,
       include: {
         cliente: { select: { nombreComercial: true } },
         usuario: { select: { nombre: true } },

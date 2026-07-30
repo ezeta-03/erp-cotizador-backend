@@ -19,10 +19,10 @@ const registrarLog = (client, { cotizacionId, usuarioId, estadoAnterior, estadoN
 ========================= */
 exports.crearCotizacion = async (req, res) => {
   try {
-    const { clienteId, usuarioId, items, margen: margenInput, conIgv } = req.body;
+    const { clienteId, items, margen: margenInput, conIgv } = req.body;
 
     const clienteIdInt = parseInt(clienteId);
-    const usuarioIdInt = parseInt(usuarioId);
+    const usuarioIdInt = req.user.id;
 
     const MARGEN_MINIMO = 30;
     let solicitudUsada = null;
@@ -262,6 +262,9 @@ exports.facturarCotizacion = async (req, res) => {
 
     const cotizacion = await prisma.cotizacion.findUnique({ where: { id: Number(id) } });
     if (!cotizacion) return res.status(404).json({ message: "Cotización no encontrada" });
+    if (req.user.role === "VENTAS" && cotizacion.usuarioId !== req.user.id) {
+      return res.status(403).json({ message: "No autorizado" });
+    }
     if (cotizacion.estado !== "APROBADA") {
       return res.status(400).json({ message: "Solo se puede facturar una cotización aprobada" });
     }
@@ -509,6 +512,9 @@ exports.generarPdf = async (req, res) => {
     if (req.user.role === "CLIENTE" && cotizacion.cliente.usuarioId !== req.user.id) {
       return res.sendStatus(403);
     }
+    if (req.user.role === "VENTAS" && cotizacion.usuarioId !== req.user.id) {
+      return res.sendStatus(403);
+    }
 
     const cotizacionConGlosa = {
       ...cotizacion,
@@ -549,12 +555,16 @@ exports.obtenerLog = async (req, res) => {
   try {
     const cotizacionId = Number(req.params.id);
 
-    if (req.user.role === "CLIENTE") {
+    if (req.user.role === "CLIENTE" || req.user.role === "VENTAS") {
       const cotizacion = await prisma.cotizacion.findUnique({
         where: { id: cotizacionId },
         include: { cliente: true },
       });
-      if (!cotizacion || cotizacion.cliente.usuarioId !== req.user.id) {
+      if (!cotizacion) return res.status(404).json({ message: "Cotización no encontrada" });
+      if (req.user.role === "CLIENTE" && cotizacion.cliente.usuarioId !== req.user.id) {
+        return res.status(403).json({ message: "No autorizado" });
+      }
+      if (req.user.role === "VENTAS" && cotizacion.usuarioId !== req.user.id) {
         return res.status(403).json({ message: "No autorizado" });
       }
     }

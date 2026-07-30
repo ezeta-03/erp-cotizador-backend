@@ -48,6 +48,10 @@ exports.login = async (req, res) => {
 exports.activarCuenta = async (req, res) => {
   const { token, password } = req.body;
 
+  if (!password || password.length < 6) {
+    return res.status(400).json({ message: "La contraseña debe tener al menos 6 caracteres" });
+  }
+
   const user = await prisma.usuario.findUnique({
     where: { activationToken: token },
   });

@@ -218,7 +218,9 @@ exports.getMetaMensualLog = async (req, res) => {
   }
 };
 
-// Obtener progreso vs meta (solo cotizaciones FACTURADAS)
+// Obtener progreso vs meta (cotizaciones aprobadas; se mantienen contando
+// aunque luego pasen a facturadas, ya que facturar es solo el siguiente paso
+// de una venta que ya se cerró — no debe hacerla "desaparecer" de la meta)
 exports.getProgresoMeta = async (req, res) => {
   try {
     const { role, id: userId } = req.user;
@@ -247,10 +249,10 @@ exports.getProgresoMeta = async (req, res) => {
     const primerDia = new Date(anio, mes - 1, 1);
     const ultimoDia = new Date(anio, mes, 0, 23, 59, 59, 999);
 
-    const cotizacionesFacturadas = await prisma.cotizacion.findMany({
+    const cotizacionesCerradas = await prisma.cotizacion.findMany({
       where: {
         usuarioId: targetUserId,
-        estado: "APROBADA",
+        estado: { in: ["APROBADA", "FACTURADA"] },
         createdAt: {
           gte: primerDia,
           lte: ultimoDia,
@@ -261,7 +263,7 @@ exports.getProgresoMeta = async (req, res) => {
       },
     });
 
-    const avance = cotizacionesFacturadas.reduce((sum, c) => sum + c.total, 0);
+    const avance = cotizacionesCerradas.reduce((sum, c) => sum + c.total, 0);
     const porcentaje = montoMeta > 0 ? (avance / montoMeta) * 100 : 0;
 
     res.json({
@@ -321,11 +323,11 @@ exports.getProgresoTodosVendedores = async (req, res) => {
 
         const montoMeta = meta?.monto || 0;
 
-        // Obtener cotizaciones aprobadas
-        const cotizacionesFacturadas = await prisma.cotizacion.findMany({
+        // Cotizaciones aprobadas o ya facturadas (facturar no debe sacarlas de la meta)
+        const cotizacionesCerradas = await prisma.cotizacion.findMany({
           where: {
             usuarioId: vendedor.id,
-            estado: "APROBADA",
+            estado: { in: ["APROBADA", "FACTURADA"] },
             createdAt: {
               gte: primerDia,
               lte: ultimoDia,
@@ -336,7 +338,7 @@ exports.getProgresoTodosVendedores = async (req, res) => {
           },
         });
 
-        const avance = cotizacionesFacturadas.reduce((sum, c) => sum + c.total, 0);
+        const avance = cotizacionesCerradas.reduce((sum, c) => sum + c.total, 0);
         const porcentaje = montoMeta > 0 ? (avance / montoMeta) * 100 : 0;
 
         return {
