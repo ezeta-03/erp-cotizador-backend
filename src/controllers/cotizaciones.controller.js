@@ -102,6 +102,7 @@ exports.crearCotizacion = async (req, res) => {
       const solicitud = await prisma.solicitudMargen.findFirst({
         where: {
           usuarioId: usuarioIdInt,
+          clienteId: clienteIdInt,
           estado: "APROBADA",
           margenSolicitado: { lte: margen },
         },
@@ -481,6 +482,7 @@ exports.renegociarCotizacion = async (req, res) => {
       const solicitud = await prisma.solicitudMargen.findFirst({
         where: {
           usuarioId: cotizacion.usuarioId,
+          clienteId: cotizacion.clienteId,
           estado: "APROBADA",
           margenSolicitado: { lte: margen },
         },

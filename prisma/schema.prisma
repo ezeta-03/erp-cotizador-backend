@@ -52,6 +52,7 @@ model Cliente {
   usuario         Usuario?     @relation(fields: [usuarioId], references: [id])
   cotizaciones    Cotizacion[]
   reservas        Reserva[]
+  solicitudesMargen SolicitudMargen[]
 }
 
 model Producto {
@@ -331,6 +332,7 @@ model UsuarioLog {
 model SolicitudMargen {
   id               Int             @id @default(autoincrement())
   usuarioId        Int
+  clienteId        Int?
   margenSolicitado Float
   comentario       String
   estado           EstadoSolicitud @default(PENDIENTE)
@@ -341,4 +343,5 @@ model SolicitudMargen {
   updatedAt        DateTime        @updatedAt
   usuario          Usuario         @relation("SolicitudesCreadas", fields: [usuarioId], references: [id])
   aprobadaPor      Usuario?        @relation("SolicitudesResueltas", fields: [aprobadaPorId], references: [id])
+  cliente          Cliente?        @relation(fields: [clienteId], references: [id])
 }
