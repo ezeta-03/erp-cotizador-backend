@@ -85,7 +85,7 @@ async function calcularItem(client, item, margen) {
 ========================= */
 exports.crearCotizacion = async (req, res) => {
   try {
-    const { clienteId, items, margen: margenInput, conIgv } = req.body;
+    const { clienteId, items, margen: margenInput, conIgv, borradorId } = req.body;
 
     const clienteIdInt = parseInt(clienteId);
     const usuarioIdInt = req.user.id;
@@ -99,15 +99,18 @@ exports.crearCotizacion = async (req, res) => {
     let solicitudUsada = null;
 
     if (margen < MARGEN_MINIMO) {
-      const solicitud = await prisma.solicitudMargen.findFirst({
-        where: {
-          usuarioId: usuarioIdInt,
-          clienteId: clienteIdInt,
-          estado: "APROBADA",
-          margenSolicitado: { lte: margen },
-        },
-        orderBy: { margenSolicitado: "asc" },
-      });
+      const solicitud = borradorId
+        ? await prisma.solicitudMargen.findFirst({
+            where: {
+              usuarioId: usuarioIdInt,
+              clienteId: clienteIdInt,
+              borradorId,
+              estado: "APROBADA",
+              margenSolicitado: { lte: margen },
+            },
+            orderBy: { margenSolicitado: "asc" },
+          })
+        : null;
       if (!solicitud) {
         return res.status(403).json({
           message: "Margen por debajo del mínimo permitido. Necesitas aprobación del administrador.",
@@ -200,7 +203,7 @@ exports.crearCotizacion = async (req, res) => {
     if (solicitudUsada) {
       await prisma.solicitudMargen.update({
         where: { id: solicitudUsada.id },
-        data: { estado: "USADA" },
+        data: { estado: "USADA", cotizacionId: updated.id },
       });
     }
 
@@ -483,6 +486,7 @@ exports.renegociarCotizacion = async (req, res) => {
         where: {
           usuarioId: cotizacion.usuarioId,
           clienteId: cotizacion.clienteId,
+          cotizacionId: cotizacion.id,
           estado: "APROBADA",
           margenSolicitado: { lte: margen },
         },

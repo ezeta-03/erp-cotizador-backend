@@ -3,13 +3,16 @@ const prisma = require("../config/prisma");
 // VENTAS/ADMIN: crear solicitud de margen reducido
 exports.crear = async (req, res) => {
   try {
-    const { margenSolicitado, comentario, clienteId } = req.body;
+    const { margenSolicitado, comentario, clienteId, cotizacionId, borradorId } = req.body;
 
     if (margenSolicitado === undefined || !comentario?.trim()) {
       return res.status(400).json({ message: "Margen y comentario son requeridos" });
     }
     if (!clienteId) {
       return res.status(400).json({ message: "Selecciona un cliente antes de solicitar el margen" });
+    }
+    if (!cotizacionId && !borradorId) {
+      return res.status(400).json({ message: "Falta identificar la cotización de esta solicitud" });
     }
     if (Number(margenSolicitado) >= 30) {
       return res.status(400).json({ message: "El margen solicitado debe ser menor a 30%" });
@@ -22,6 +25,8 @@ exports.crear = async (req, res) => {
       data: {
         usuarioId: req.user.id,
         clienteId: parseInt(clienteId),
+        cotizacionId: cotizacionId ? parseInt(cotizacionId) : null,
+        borradorId: borradorId || null,
         margenSolicitado: Number(margenSolicitado),
         comentario: comentario.trim(),
         estado: "PENDIENTE",
@@ -51,6 +56,7 @@ exports.listar = async (req, res) => {
         usuario: { select: { id: true, nombre: true, email: true } },
         aprobadaPor: { select: { id: true, nombre: true } },
         cliente: { select: { id: true, nombreComercial: true } },
+        cotizacion: { select: { id: true, numero: true } },
       },
       orderBy: { createdAt: "desc" },
     });
@@ -62,16 +68,25 @@ exports.listar = async (req, res) => {
   }
 };
 
-// VENTAS/ADMIN: ver las propias solicitudes aprobadas (no usadas) para un cliente
-// específico — el alcance es siempre por cliente, para que una aprobación de un
-// caso puntual no se "filtre" y se use en una cotización de otro cliente.
+// VENTAS/ADMIN: ver las propias solicitudes aprobadas (no usadas) para la
+// cotización exacta que se está creando/renegociando — así una aprobación de
+// una cotización no se "filtra" y se usa en otra cotización del mismo cliente.
+// Se identifica por cotizacionId (renegociación, ya tiene un id real) o por
+// borradorId (cotización nueva, aún sin guardar).
 exports.misAprobadas = async (req, res) => {
   try {
     const clienteId = parseInt(req.query.clienteId);
-    if (!clienteId) return res.json([]);
+    const cotizacionId = req.query.cotizacionId ? parseInt(req.query.cotizacionId) : null;
+    const borradorId = req.query.borradorId || null;
+
+    if (!clienteId || (!cotizacionId && !borradorId)) return res.json([]);
+
+    const where = { usuarioId: req.user.id, clienteId, estado: "APROBADA" };
+    if (cotizacionId) where.cotizacionId = cotizacionId;
+    else where.borradorId = borradorId;
 
     const solicitudes = await prisma.solicitudMargen.findMany({
-      where: { usuarioId: req.user.id, clienteId, estado: "APROBADA" },
+      where,
       orderBy: { margenSolicitado: "asc" },
     });
     res.json(solicitudes);
