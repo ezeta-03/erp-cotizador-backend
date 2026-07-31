@@ -240,6 +240,23 @@ model Panel {
   updatedAt        DateTime       @updatedAt
   items            CotizacionItem[]
   reservas         Reserva[]
+  parametrosCosto  ParametrosCostoMupi?
+}
+
+// Parámetros de costo propios de CADA panel/mupi (varían según tamaño, N° de caras, etc).
+model ParametrosCostoMupi {
+  id                 Int      @id @default(autoincrement())
+  panelId            Int      @unique
+  panel              Panel    @relation(fields: [panelId], references: [id])
+  luz                Float    @default(100)
+  costoHoraManoObra  Float    @default(32)
+  horasMantenimiento Float    @default(2)
+  horasInstalacion   Float    @default(2)
+  costoLona          Float    @default(18)
+  anchoLona          Float    @default(1.83)
+  altoLona           Float    @default(0.83)
+  numeroCaras        Float    @default(2)
+  updatedAt          DateTime @updatedAt
 }
 
 model Reserva {

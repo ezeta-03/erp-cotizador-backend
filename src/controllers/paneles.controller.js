@@ -105,6 +105,22 @@ exports.cambiarEstado = async (req, res) => {
   }
 };
 
+exports.actualizarPrecioMes = async (req, res) => {
+  try {
+    const { precioMes } = req.body;
+    const valor = toFloat(precioMes);
+    if (valor === null) return res.status(400).json({ message: "Precio inválido" });
+
+    const panel = await prisma.panel.update({
+      where: { id: parseInt(req.params.id) },
+      data: { precioMes: valor },
+    });
+    res.json(panel);
+  } catch (e) {
+    res.status(500).json({ message: "Error al actualizar precio mínimo", error: e.message });
+  }
+};
+
 exports.eliminar = async (req, res) => {
   try {
     await prisma.panel.update({

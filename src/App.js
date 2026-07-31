@@ -21,6 +21,8 @@ const solicitudesMargenRoutes = require("./routes/solicitudesMargen.routes");
 const panelesRoutes           = require("./routes/paneles.routes");
 const proveedoresRoutes       = require("./routes/proveedores.routes");
 const reservasRoutes          = require("./routes/reservas.routes");
+const parametrosCostoMupiRoutes = require("./routes/parametrosCostoMupi.routes");
+const rentabilidadRoutes      = require("./routes/rentabilidad.routes");
 
 // app.use(cors());
 app.use(express.json());
@@ -36,6 +38,8 @@ app.use("/api/solicitudes-margen", solicitudesMargenRoutes);
 app.use("/api/paneles",           panelesRoutes);
 app.use("/api/proveedores",       proveedoresRoutes);
 app.use("/api/reservas",          reservasRoutes);
+app.use("/api/parametros-costo-mupi", parametrosCostoMupiRoutes);
+app.use("/api/rentabilidad",      rentabilidadRoutes);
 
 // Health check endpoint
 app.get("/api/health", async (req, res) => {

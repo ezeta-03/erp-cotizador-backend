@@ -164,6 +164,25 @@ exports.actualizar = async (req, res) => {
   }
 };
 
+/* ── Actualizar solo el precio contratado ── */
+exports.actualizarPrecioMensual = async (req, res) => {
+  try {
+    const id = parseInt(req.params.id);
+    const { precioMensual } = req.body;
+    const valor = parseFloat(precioMensual);
+    if (isNaN(valor) || valor <= 0) return res.status(400).json({ message: "Precio inválido" });
+
+    const reserva = await prisma.reserva.update({
+      where: { id },
+      data: { precioMensual: valor },
+      include: INCLUDE,
+    });
+    res.json(reserva);
+  } catch (e) {
+    res.status(500).json({ message: "Error al actualizar precio contratado", error: e.message });
+  }
+};
+
 /* ── Eliminar (soft) ── */
 exports.eliminar = async (req, res) => {
   try {

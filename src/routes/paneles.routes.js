@@ -10,6 +10,9 @@ router.put   ("/:id",       auth, allowRoles("ADMIN"),           ctrl.actualizar
 // El estado de un panel/mupi se deriva de sus reservas; este endpoint es solo
 // un override manual para corregir datos, por eso queda restringido a ADMIN.
 router.patch ("/:id/estado",auth, allowRoles("ADMIN"),           ctrl.cambiarEstado);
+// Edición puntual del precio mínimo (no toca el resto de campos del panel, a
+// diferencia de PUT /:id que espera el formulario completo).
+router.patch ("/:id/precio-mes", auth, allowRoles("ADMIN"),      ctrl.actualizarPrecioMes);
 router.delete("/:id",       auth, allowRoles("ADMIN"),           ctrl.eliminar);
 
 module.exports = router;
