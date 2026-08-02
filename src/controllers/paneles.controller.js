@@ -169,15 +169,18 @@ exports.importar = async (req, res) => {
         costoProduccion:  toFloatD(fila.costoProduccion),
         costoInstalacion: toFloatD(fila.costoInstalacion),
         precioMes:        toFloat(fila.precioMes),
-        estado:           ESTADOS_VALIDOS.includes(fila.estado) ? fila.estado : "LIBRE",
         activo:           true,
       };
+      // El estado se deriva de las reservas activas; solo se sobrescribe si el CSV trae
+      // un valor explícito y válido. Si no, un panel existente NO debe resetearse a LIBRE
+      // (solo un panel nuevo, sin historial, arranca en LIBRE).
+      const estadoCsv = ESTADOS_VALIDOS.includes(fila.estado) ? fila.estado : undefined;
 
       try {
         await prisma.panel.upsert({
           where:  { codigo },
-          update: data,
-          create: { codigo, ...data },
+          update: { ...data, estado: estadoCsv },
+          create: { codigo, ...data, estado: estadoCsv ?? "LIBRE" },
         });
         if (existente) resultados.actualizados++;
         else resultados.creados++;
