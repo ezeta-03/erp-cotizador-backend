@@ -205,7 +205,15 @@ enum EstadoPanel {
   LIBRE
   LIBRE_EXTERNO
   OCUPADO
+  OCUPADO_EXTERNO
   REEMPLAZO
+}
+
+// Si el panel es nuestro o lo gestionamos por cuenta de un tercero (afecta qué
+// estados/campos aplican al crear una reserva para ese panel).
+enum PropiedadPanel {
+  PROPIO
+  EXTERNO
 }
 
 enum DistritoPanel {
@@ -235,6 +243,7 @@ model Panel {
   costoInstalacion Float          @default(0)
   precioMes        Float?
   estado           EstadoPanel    @default(LIBRE)
+  propiedad        PropiedadPanel @default(PROPIO)
   activo           Boolean        @default(true)
   createdAt        DateTime       @default(now())
   updatedAt        DateTime       @updatedAt
@@ -262,19 +271,35 @@ model ParametrosCostoMupi {
 model Reserva {
   id             Int         @id @default(autoincrement())
   panelId        Int
-  clienteId      Int
+  clienteId      Int?
   cotizacionId   Int?
   fechaInicio    DateTime
   fechaFin       DateTime
-  precioMensual  Float
+  precioMensual  Float?
   estado         EstadoPanel @default(OCUPADO)
   notas          String?
   activo         Boolean       @default(true)
   createdAt      DateTime      @default(now())
   updatedAt      DateTime      @updatedAt
   panel          Panel         @relation(fields: [panelId], references: [id])
-  cliente        Cliente       @relation(fields: [clienteId], references: [id])
+  cliente        Cliente?      @relation(fields: [clienteId], references: [id])
   cotizacion     Cotizacion?   @relation(fields: [cotizacionId], references: [id])
+  eventosProduccion EventoProduccionInstalacion[]
+}
+
+// Registro de cada trabajo de producción/instalación durante un contrato (el inicial
+// y cualquier renovación de banner que pida el cliente). El costo de referencia sale
+// de Panel.costoProduccion + Panel.costoInstalacion; aquí solo se registra fecha y
+// cuánto se cobró, para saber cuántas veces se renueva y la rentabilidad de ese servicio.
+model EventoProduccionInstalacion {
+  id           Int      @id @default(autoincrement())
+  reservaId    Int
+  reserva      Reserva  @relation(fields: [reservaId], references: [id])
+  fecha        DateTime
+  montoCobrado Float
+  notas        String?
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
 }
 
 enum EstadoCuota {

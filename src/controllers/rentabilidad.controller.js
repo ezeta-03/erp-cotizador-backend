@@ -17,7 +17,9 @@ function mesesDeContrato(fechaInicio, fechaFin) {
 exports.listarMupis = async (req, res) => {
   try {
     const reservas = await prisma.reserva.findMany({
-      where: { activo: true },
+      // Los registros *_EXTERNO no son contratos nuestros (sin cliente/precio propio);
+      // se excluyen de este registro y se ven aparte en "Oportunidad perdida".
+      where: { activo: true, estado: { notIn: ["LIBRE_EXTERNO", "OCUPADO_EXTERNO"] } },
       include: {
         panel: { select: { codigo: true, nombre: true, tipo: true, precioMes: true } },
         cliente: { select: { nombreComercial: true, nombreContacto: true } },
@@ -87,5 +89,43 @@ exports.listarMupis = async (req, res) => {
     res.json({ resumen, filas });
   } catch (e) {
     res.status(500).json({ message: "Error al calcular rentabilidad de paneles", error: e.message });
+  }
+};
+
+// Paneles/mupis "Libre externo": no son nuestros, pero podríamos alquilarlos y estuvieron
+// sin ocupar. Estima cuánto se pudo haber generado usando el precio mínimo del panel.
+exports.oportunidadPerdida = async (req, res) => {
+  try {
+    const reservas = await prisma.reserva.findMany({
+      where: { activo: true, estado: "LIBRE_EXTERNO" },
+      include: {
+        panel: { select: { codigo: true, nombre: true, tipo: true, precioMes: true } },
+      },
+      orderBy: { fechaInicio: "asc" },
+    });
+
+    const filas = reservas.map((r) => {
+      const meses = mesesDeContrato(r.fechaInicio, r.fechaFin);
+      const precioReferencia = r.panel.precioMes ?? 0;
+      const montoPerdido = precioReferencia * meses;
+
+      return {
+        reservaId: r.id,
+        panelId: r.panelId,
+        panel: { codigo: r.panel.codigo, nombre: r.panel.nombre, tipo: r.panel.tipo },
+        fechaInicio: r.fechaInicio,
+        fechaFin: r.fechaFin,
+        meses,
+        precioReferencia,
+        montoPerdido: parseFloat(montoPerdido.toFixed(2)),
+        notas: r.notas,
+      };
+    });
+
+    const totalPerdido = filas.reduce((s, f) => s + f.montoPerdido, 0);
+
+    res.json({ filas, totalPerdido: parseFloat(totalPerdido.toFixed(2)) });
+  } catch (e) {
+    res.status(500).json({ message: "Error al calcular oportunidad perdida", error: e.message });
   }
 };

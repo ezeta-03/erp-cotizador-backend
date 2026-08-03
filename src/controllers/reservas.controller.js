@@ -1,11 +1,17 @@
 const prisma = require("../config/prisma");
 
-const ESTADOS = ["LIBRE", "LIBRE_EXTERNO", "OCUPADO", "REEMPLAZO"];
+const ESTADOS = ["LIBRE", "LIBRE_EXTERNO", "OCUPADO", "OCUPADO_EXTERNO", "REEMPLAZO"];
+// Estados de un panel gestionado por un tercero: son solo un registro de referencia
+// (fechas + estado), sin cliente ni precio propios.
+const ESTADOS_EXTERNO = ["LIBRE_EXTERNO", "OCUPADO_EXTERNO"];
+const esExterno = (estado) => ESTADOS_EXTERNO.includes(estado);
 
 const INCLUDE = {
   panel:   { select: { id: true, codigo: true, nombre: true, distrito: true, tipo: true } },
   cliente: { select: { id: true, nombreComercial: true, documento: true } },
 };
+
+const nombreSolapada = (solapada) => solapada.cliente?.nombreComercial ?? "un registro externo";
 
 /* ── Listar por año ── */
 exports.listar = async (req, res) => {
@@ -52,9 +58,13 @@ exports.porCotizacion = async (req, res) => {
 exports.crear = async (req, res) => {
   try {
     const { panelId, clienteId, fechaInicio, fechaFin, precioMensual, estado, notas, cotizacionId } = req.body;
+    const estadoFinal = ESTADOS.includes(estado) ? estado : "OCUPADO";
+    const externo = esExterno(estadoFinal);
 
-    if (!panelId || !clienteId || !fechaInicio || !fechaFin || !precioMensual)
-      return res.status(400).json({ message: "Panel, cliente, fechas y precio son obligatorios" });
+    if (!panelId || !fechaInicio || !fechaFin)
+      return res.status(400).json({ message: "Panel y fechas son obligatorios" });
+    if (!externo && (!clienteId || !precioMensual))
+      return res.status(400).json({ message: "Cliente y precio son obligatorios" });
 
     const panel = await prisma.panel.findUnique({ where: { id: parseInt(panelId) } });
     if (!panel || !panel.activo) {
@@ -78,19 +88,19 @@ exports.crear = async (req, res) => {
     });
     if (solapada) {
       return res.status(409).json({
-        message: `El panel ya está reservado para ${solapada.cliente.nombreComercial} del ${solapada.fechaInicio.toISOString().slice(0, 10)} al ${solapada.fechaFin.toISOString().slice(0, 10)}`,
+        message: `El panel ya está reservado para ${nombreSolapada(solapada)} del ${solapada.fechaInicio.toISOString().slice(0, 10)} al ${solapada.fechaFin.toISOString().slice(0, 10)}`,
       });
     }
 
     const reserva = await prisma.reserva.create({
       data: {
         panelId:       parseInt(panelId),
-        clienteId:     parseInt(clienteId),
+        clienteId:     externo ? null : parseInt(clienteId),
         cotizacionId:  cotizacionId ? parseInt(cotizacionId) : null,
-        fechaInicio:   new Date(fechaInicio),
-        fechaFin:      new Date(fechaFin),
-        precioMensual: parseFloat(precioMensual),
-        estado:        ESTADOS.includes(estado) ? estado : "OCUPADO",
+        fechaInicio:   nuevaInicio,
+        fechaFin:      nuevaFin,
+        precioMensual: externo ? null : parseFloat(precioMensual),
+        estado:        estadoFinal,
         notas:         notas || null,
       },
       include: INCLUDE,
@@ -116,11 +126,19 @@ exports.actualizar = async (req, res) => {
     const actual = await prisma.reserva.findUnique({ where: { id } });
     if (!actual) return res.status(404).json({ message: "Reserva no encontrada" });
 
+    const estadoFinal = ESTADOS.includes(estado) ? estado : actual.estado;
+    const externo = esExterno(estadoFinal);
+
     const nuevaInicio = fechaInicio ? new Date(fechaInicio) : actual.fechaInicio;
     const nuevaFin = fechaFin ? new Date(fechaFin) : actual.fechaFin;
 
     if (nuevaFin <= nuevaInicio)
       return res.status(400).json({ message: "La fecha de fin debe ser posterior al inicio" });
+
+    if (!externo && !(clienteId || actual.clienteId))
+      return res.status(400).json({ message: "Cliente es obligatorio para una reserva propia" });
+    if (!externo && !(precioMensual || actual.precioMensual))
+      return res.status(400).json({ message: "Precio es obligatorio para una reserva propia" });
 
     if (fechaInicio || fechaFin) {
       const solapada = await prisma.reserva.findFirst({
@@ -135,7 +153,7 @@ exports.actualizar = async (req, res) => {
       });
       if (solapada) {
         return res.status(409).json({
-          message: `El panel ya está reservado para ${solapada.cliente.nombreComercial} del ${solapada.fechaInicio.toISOString().slice(0, 10)} al ${solapada.fechaFin.toISOString().slice(0, 10)}`,
+          message: `El panel ya está reservado para ${nombreSolapada(solapada)} del ${solapada.fechaInicio.toISOString().slice(0, 10)} al ${solapada.fechaFin.toISOString().slice(0, 10)}`,
         });
       }
     }
@@ -143,11 +161,11 @@ exports.actualizar = async (req, res) => {
     const reserva = await prisma.reserva.update({
       where: { id },
       data: {
-        clienteId:     clienteId     ? parseInt(clienteId) : undefined,
-        fechaInicio:   fechaInicio   ? new Date(fechaInicio) : undefined,
-        fechaFin:      fechaFin      ? new Date(fechaFin)    : undefined,
-        precioMensual: precioMensual ? parseFloat(precioMensual) : undefined,
-        estado:        ESTADOS.includes(estado) ? estado : undefined,
+        clienteId:     externo ? null : (clienteId ? parseInt(clienteId) : undefined),
+        fechaInicio:   fechaInicio   ? nuevaInicio : undefined,
+        fechaFin:      fechaFin      ? nuevaFin    : undefined,
+        precioMensual: externo ? null : (precioMensual ? parseFloat(precioMensual) : undefined),
+        estado:        estadoFinal,
         notas:         notas ?? null,
       },
       include: INCLUDE,

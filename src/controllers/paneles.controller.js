@@ -1,8 +1,9 @@
 const prisma = require("../config/prisma");
 
-const ESTADOS_VALIDOS  = ["LIBRE", "LIBRE_EXTERNO", "OCUPADO", "REEMPLAZO"];
+const ESTADOS_VALIDOS  = ["LIBRE", "LIBRE_EXTERNO", "OCUPADO", "OCUPADO_EXTERNO", "REEMPLAZO"];
 const DISTRITOS_VALIDOS = ["HUANCAYO", "EL_TAMBO", "CHILCA"];
 const TIPOS_VALIDOS    = ["ESTATICO", "LED", "MUPI"];
+const PROPIEDAD_VALIDOS = ["PROPIO", "EXTERNO"];
 
 /* ── helpers ── */
 const toFloat   = (v) => (v != null && v !== "" ? parseFloat(v)  : null);
@@ -25,7 +26,7 @@ exports.crear = async (req, res) => {
     const {
       codigo, nombre, distrito, tipo, ubicacion,
       lat, lng, ancho, alto,
-      costoProduccion, costoInstalacion, precioMes, estado,
+      costoProduccion, costoInstalacion, precioMes, estado, propiedad,
     } = req.body;
 
     if (!codigo) return res.status(400).json({ message: "El código es obligatorio" });
@@ -45,6 +46,7 @@ exports.crear = async (req, res) => {
         costoInstalacion: toFloatD(costoInstalacion),
         precioMes:        toFloat(precioMes),
         estado:           ESTADOS_VALIDOS.includes(estado) ? estado : "LIBRE",
+        propiedad:        PROPIEDAD_VALIDOS.includes(propiedad) ? propiedad : "PROPIO",
       },
     });
 
@@ -60,7 +62,7 @@ exports.actualizar = async (req, res) => {
     const {
       codigo, nombre, distrito, tipo, ubicacion,
       lat, lng, ancho, alto,
-      costoProduccion, costoInstalacion, precioMes, estado,
+      costoProduccion, costoInstalacion, precioMes, estado, propiedad,
     } = req.body;
 
     const panel = await prisma.panel.update({
@@ -79,6 +81,7 @@ exports.actualizar = async (req, res) => {
         costoInstalacion: toFloatD(costoInstalacion),
         precioMes:        toFloat(precioMes),
         estado:           ESTADOS_VALIDOS.includes(estado) ? estado : undefined,
+        propiedad:        PROPIEDAD_VALIDOS.includes(propiedad) ? propiedad : undefined,
       },
     });
 
@@ -175,12 +178,13 @@ exports.importar = async (req, res) => {
       // un valor explícito y válido. Si no, un panel existente NO debe resetearse a LIBRE
       // (solo un panel nuevo, sin historial, arranca en LIBRE).
       const estadoCsv = ESTADOS_VALIDOS.includes(fila.estado) ? fila.estado : undefined;
+      const propiedadCsv = PROPIEDAD_VALIDOS.includes(fila.propiedad) ? fila.propiedad : undefined;
 
       try {
         await prisma.panel.upsert({
           where:  { codigo },
-          update: { ...data, estado: estadoCsv },
-          create: { codigo, ...data, estado: estadoCsv ?? "LIBRE" },
+          update: { ...data, estado: estadoCsv, propiedad: propiedadCsv },
+          create: { codigo, ...data, estado: estadoCsv ?? "LIBRE", propiedad: propiedadCsv ?? "PROPIO" },
         });
         if (existente) resultados.actualizados++;
         else resultados.creados++;
