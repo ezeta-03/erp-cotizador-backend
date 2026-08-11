@@ -136,6 +136,32 @@ exports.eliminar = async (req, res) => {
   }
 };
 
+// El "código" sigue siendo único aunque el panel esté eliminado (soft-delete), por eso
+// hace falta poder verlos y restaurarlos en vez de reutilizar el código a ciegas.
+exports.listarEliminados = async (req, res) => {
+  try {
+    const paneles = await prisma.panel.findMany({
+      where: { activo: false },
+      orderBy: { updatedAt: "desc" },
+    });
+    res.json(paneles);
+  } catch (e) {
+    res.status(500).json({ message: "Error al listar paneles eliminados", error: e.message });
+  }
+};
+
+exports.restaurar = async (req, res) => {
+  try {
+    const panel = await prisma.panel.update({
+      where: { id: parseInt(req.params.id) },
+      data: { activo: true },
+    });
+    res.json(panel);
+  } catch (e) {
+    res.status(500).json({ message: "Error al restaurar panel", error: e.message });
+  }
+};
+
 /* ── Importación masiva desde CSV ── */
 exports.importar = async (req, res) => {
   try {

@@ -4,6 +4,7 @@ const allowRoles = require("../middlewares/role.middleware");
 const ctrl       = require("../controllers/paneles.controller");
 
 router.get   ("/",          auth, allowRoles("ADMIN", "VENTAS"), ctrl.listar);
+router.get   ("/eliminados",auth, allowRoles("ADMIN"),           ctrl.listarEliminados);
 router.post  ("/",          auth, allowRoles("ADMIN"),           ctrl.crear);
 router.post  ("/importar",  auth, allowRoles("ADMIN"),           ctrl.importar);
 router.put   ("/:id",       auth, allowRoles("ADMIN"),           ctrl.actualizar);
@@ -14,5 +15,6 @@ router.patch ("/:id/estado",auth, allowRoles("ADMIN"),           ctrl.cambiarEst
 // diferencia de PUT /:id que espera el formulario completo).
 router.patch ("/:id/precio-mes", auth, allowRoles("ADMIN"),      ctrl.actualizarPrecioMes);
 router.delete("/:id",       auth, allowRoles("ADMIN"),           ctrl.eliminar);
+router.patch ("/:id/restaurar", auth, allowRoles("ADMIN"),       ctrl.restaurar);
 
 module.exports = router;
