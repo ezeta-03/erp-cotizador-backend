@@ -26,9 +26,9 @@ exports.login = async (req, res) => {
     return res.status(401).json({ message: "Contraseña incorrecta" });
   }
 
-  // 👇 incluye nombre y role en el payload
+  // 👇 incluye nombre, email y role en el payload
   const token = jwt.sign(
-    { id: user.id, nombre: user.nombre, role: user.role },
+    { id: user.id, nombre: user.nombre, role: user.role, email: user.email },
     process.env.JWT_SECRET,
     { expiresIn: "8h" }
   );
@@ -40,6 +40,7 @@ exports.login = async (req, res) => {
       id: user.id,
       nombre: user.nombre,
       role: user.role,
+      email: user.email,
     },
   });
 };
