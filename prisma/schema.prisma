@@ -67,6 +67,7 @@ model Cliente {
   email           String?
   direccion       String?
   activo          Boolean      @default(true)
+  createdAt       DateTime     @default(now())
   usuarioId       Int?         @unique
   usuario         Usuario?     @relation(fields: [usuarioId], references: [id])
   cotizaciones    Cotizacion[]
