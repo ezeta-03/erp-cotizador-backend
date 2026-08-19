@@ -9,7 +9,9 @@ const allowedOrigins = [
   "https://erp-zaazmago.web.app",
   "https://erp-zaazmago.firebaseapp.com",
   "http://localhost:5173",
-].filter(Boolean);
+]
+  .filter(Boolean)
+  .map((url) => url.replace(/\/+$/, ""));
 
 app.use(
   cors({
