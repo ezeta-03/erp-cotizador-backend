@@ -3,9 +3,23 @@ const cors = require("cors");
 
 const app = express();
 app.disable('etag'); // evita 304 Not Modified con datos obsoletos
+
+const allowedOrigins = [
+  process.env.FRONTEND_URL,
+  "https://erp-zaazmago.web.app",
+  "https://erp-zaazmago.firebaseapp.com",
+  "http://localhost:5173",
+].filter(Boolean);
+
 app.use(
   cors({
-    origin: "*", // Permitir cualquier origin para debugging
+    origin: (origin, callback) => {
+      if (!origin || allowedOrigins.includes(origin)) {
+        callback(null, true);
+      } else {
+        callback(new Error(`Origin no permitido: ${origin}`));
+      }
+    },
     credentials: false,
   })
 );

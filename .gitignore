@@ -25,3 +25,7 @@ dist-ssr
 
 .env
 .env.*
+
+# Archivos con credenciales reales en texto plano (no deben trackearse)
+VARIABLES-RENDER.txt
+RENDER-CONFIGURACION.md

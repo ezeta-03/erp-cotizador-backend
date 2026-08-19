@@ -21,7 +21,7 @@ if echo "$RESPONSE" | grep -q "DATABASE_URL"; then
     echo "   2. Selecciona 'erp-cotizador-backend'"
     echo "   3. Settings → Environment"
     echo "   4. Agrega variable: DATABASE_URL"
-    echo "   5. Valor: postgresql://postgres.qlqbhyfzdzlfwsqysveb:Dulc34lm3ndr4m1$@aws-0-us-west-2.pooler.supabase.com:5432/postgres"
+    echo "   5. Valor: copia la connection string desde Supabase Dashboard > Settings > Database"
     echo "   6. Save"
     echo "   7. Manual Deploy → Clear build cache and deploy"
 else
