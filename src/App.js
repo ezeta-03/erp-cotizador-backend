@@ -6,6 +6,7 @@ app.disable('etag'); // evita 304 Not Modified con datos obsoletos
 
 const allowedOrigins = [
   process.env.FRONTEND_URL,
+  "https://erp.zaazmagoholding.com",
   "https://erp-zaazmago.web.app",
   "https://erp-zaazmago.firebaseapp.com",
   "http://localhost:5173",
