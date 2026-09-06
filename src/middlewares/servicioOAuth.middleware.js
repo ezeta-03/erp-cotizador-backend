@@ -28,12 +28,15 @@ async function resolverUsuarioSistema() {
 //     FK de MovimientoAlmacen.usuarioId) funcione sin cambios.
 module.exports = function servicioOAuth(authMiddlewareHumano) {
   return async (req, res, next) => {
-    const claveRecibida = req.header("X-Almacen-Bridge-Key");
+    const claveRecibida = req.header("X-Almacen-Bridge-Key")?.trim();
     if (!claveRecibida) {
       return authMiddlewareHumano(req, res, next);
     }
 
-    if (!process.env.ALMACEN_BRIDGE_API_KEY || claveRecibida !== process.env.ALMACEN_BRIDGE_API_KEY) {
+    // .trim() de ambos lados: un espacio o salto de línea de más al copiar la clave
+    // en el panel de variables de entorno (Render, etc.) no debe romper la comparación.
+    const claveEsperada = process.env.ALMACEN_BRIDGE_API_KEY?.trim();
+    if (!claveEsperada || claveRecibida !== claveEsperada) {
       return res.status(401).json({ message: "Clave de servicio inválida" });
     }
 
