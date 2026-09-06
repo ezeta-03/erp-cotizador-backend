@@ -43,6 +43,7 @@ const rentabilidadRoutes      = require("./routes/rentabilidad.routes");
 const eventosProduccionRoutes = require("./routes/eventosProduccion.routes");
 const dashboardRoutes         = require("./routes/dashboard.routes");
 const panelWidgetsRoutes      = require("./routes/panelWidgets.routes");
+const almacenRoutes           = require("./routes/almacen.routes");
 
 // app.use(cors());
 app.use(express.json());
@@ -63,6 +64,7 @@ app.use("/api/rentabilidad",      rentabilidadRoutes);
 app.use("/api/eventos-produccion", eventosProduccionRoutes);
 app.use("/api/dashboard",         dashboardRoutes);
 app.use("/api/panel-widgets",     panelWidgetsRoutes);
+app.use("/api/almacen",           almacenRoutes);
 
 // Health check endpoint
 app.get("/api/health", async (req, res) => {

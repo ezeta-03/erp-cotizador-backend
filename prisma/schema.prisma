@@ -38,6 +38,7 @@ model Usuario {
   logsComoSujeto           UsuarioLog[]    @relation("LogsDeUsuario")
   logsRealizados           UsuarioLog[]    @relation("LogsRealizados")
   panelWidgets             PanelWidget[]
+  movimientosAlmacen       MovimientoAlmacen[]
 }
 
 // Acomodo personal del panel de bienvenida (bento): qué bloques tiene cada
@@ -73,6 +74,7 @@ model Cliente {
   cotizaciones    Cotizacion[]
   reservas        Reserva[]
   solicitudesMargen SolicitudMargen[]
+  movimientosAlmacen MovimientoAlmacen[]
 }
 
 model Producto {
@@ -90,10 +92,12 @@ model Producto {
   origen          String              @default("CSV")
   tipoMedida      TipoMedida          @default(UNIDAD)
   nombre          String?
+  stockActual     Float               @default(0)
   createdAt       DateTime            @default(now())
   updatedAt       DateTime            @updatedAt
   items           CotizacionItem[]
   adicionales     ProductoAdicional[]
+  movimientosAlmacen MovimientoAlmacen[]
 
   @@index([categoria])
   @@index([servicio])
@@ -347,6 +351,7 @@ model Proveedor {
   createdAt           DateTime          @default(now())
   updatedAt           DateTime          @updatedAt
   cuotas              ProveedorCuota[]
+  movimientosAlmacen  MovimientoAlmacen[]
 }
 
 model ProveedorCuota {
@@ -410,4 +415,40 @@ model SolicitudMargen {
   aprobadaPor      Usuario?        @relation("SolicitudesResueltas", fields: [aprobadaPorId], references: [id])
   cliente          Cliente?        @relation(fields: [clienteId], references: [id])
   cotizacion       Cotizacion?     @relation(fields: [cotizacionId], references: [id])
+}
+
+enum TipoMovimientoAlmacen {
+  ENTRADA
+  SALIDA
+}
+
+// Kardex de almacén: cada entrada (compra a proveedor) o salida (venta a
+// cliente, o consumo de un proyecto de seguimiento-actividades) de un
+// producto. Producto.stockActual se mantiene denormalizado y se actualiza
+// dentro de la misma transacción que crea el movimiento.
+model MovimientoAlmacen {
+  id                Int                    @id @default(autoincrement())
+  tipo              TipoMovimientoAlmacen
+  productoId        Int
+  producto          Producto               @relation(fields: [productoId], references: [id])
+  cantidad          Float
+  precioUnitario    Float
+  precioTotal       Float
+  proveedorId       Int?
+  proveedor         Proveedor?             @relation(fields: [proveedorId], references: [id])
+  clienteId         Int?
+  cliente           Cliente?               @relation(fields: [clienteId], references: [id])
+  precioFacturado   Float?
+  proyectoExternoId String?
+  usuarioId         Int
+  usuario           Usuario                @relation(fields: [usuarioId], references: [id])
+  notas             String?
+  fecha             DateTime               @default(now())
+  createdAt         DateTime               @default(now())
+
+  @@index([productoId])
+  @@index([tipo])
+  @@index([proveedorId])
+  @@index([clienteId])
+  @@index([proyectoExternoId])
 }
