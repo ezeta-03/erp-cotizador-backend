@@ -37,11 +37,7 @@ module.exports = function servicioOAuth(authMiddlewareHumano) {
     // en el panel de variables de entorno (Render, etc.) no debe romper la comparación.
     const claveEsperada = process.env.ALMACEN_BRIDGE_API_KEY?.trim();
     if (!claveEsperada || claveRecibida !== claveEsperada) {
-      // DEBUG TEMPORAL — quitar apenas se resuelva el mismatch de la clave.
-      return res.status(401).json({
-        message: "Clave de servicio inválida",
-        debugLongitudes: { esperada: claveEsperada?.length ?? null, recibida: claveRecibida?.length ?? null },
-      });
+      return res.status(401).json({ message: "Clave de servicio inválida" });
     }
 
     try {
