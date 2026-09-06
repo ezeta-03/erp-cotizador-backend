@@ -2,6 +2,7 @@ const prisma = require("../config/prisma");
 const puppeteer = require("puppeteer");
 const cotizacionTemplate = require("../templates/cotizacionPdf.template");
 const { generarGlosa } = require("../utils/glosa");
+const { crearProyectoDesdeCotizacion } = require("../services/proyectoBridge");
 
 const registrarLog = (client, { cotizacionId, usuarioId, estadoAnterior, estadoNuevo, comentario }) =>
   client.cotizacionLog.create({
@@ -306,7 +307,7 @@ exports.responderCotizacion = async (req, res) => {
       return res.status(400).json({ message: "La cotización ya fue respondida" });
     }
 
-    const updated = await prisma.cotizacion.update({
+    let updated = await prisma.cotizacion.update({
       where: { id: Number(id) },
       data: { estado, respuestaComentario: comentario || null, respondidaAt: new Date() },
     });
@@ -318,6 +319,20 @@ exports.responderCotizacion = async (req, res) => {
       estadoNuevo: estado,
       comentario: comentario || null,
     });
+
+    // Al aprobar, crear el Proyecto correspondiente en seguimiento-actividades (Firestore).
+    // Nunca bloquea la aprobación: si Firestore falla, la cotización queda APROBADA igual
+    // y el error queda registrado en proyectoExternoError para reintentar más adelante.
+    if (estado === "APROBADA") {
+      const vendedor = await prisma.usuario.findUnique({ where: { id: cotizacion.usuarioId } });
+      const resultado = await crearProyectoDesdeCotizacion({ cotizacion: updated, cliente, vendedor });
+      updated = await prisma.cotizacion.update({
+        where: { id: Number(id) },
+        data: resultado.id
+          ? { proyectoExternoId: resultado.id, proyectoExternoError: null }
+          : { proyectoExternoError: resultado.error },
+      });
+    }
 
     res.json(updated);
   } catch (error) {

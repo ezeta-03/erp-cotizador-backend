@@ -122,6 +122,8 @@ model Cotizacion {
   respondidaAt        DateTime?
   respuestaComentario String?
   facturadaAt         DateTime?
+  proyectoExternoId    String?
+  proyectoExternoError String?
   clienteId           Int
   usuarioId           Int
   cliente             Cliente          @relation(fields: [clienteId], references: [id])

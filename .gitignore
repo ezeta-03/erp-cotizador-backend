@@ -29,3 +29,6 @@ dist-ssr
 # Archivos con credenciales reales en texto plano (no deben trackearse)
 VARIABLES-RENDER.txt
 RENDER-CONFIGURACION.md
+
+# Credenciales de cuenta de servicio (Firebase Admin SDK, etc.)
+/secrets/
