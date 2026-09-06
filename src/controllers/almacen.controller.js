@@ -145,21 +145,19 @@ exports.registrarSalida = async (req, res) => {
       cantidad, precioUnitario, precioFacturado, fecha, notas,
     } = req.body;
 
-    if (!productoId || !cantidad || precioUnitario === undefined) {
-      return res.status(400).json({ message: "Faltan campos requeridos: productoId, cantidad, precioUnitario" });
+    if (!productoId || !cantidad) {
+      return res.status(400).json({ message: "Faltan campos requeridos: productoId, cantidad" });
     }
     if (!clienteId && !proyectoExternoId) {
       return res.status(400).json({ message: "La salida debe indicar clienteId y/o proyectoExternoId" });
     }
 
     const cant = Number(cantidad);
-    const precio = Number(precioUnitario);
     if (isNaN(cant) || cant <= 0) return res.status(400).json({ message: "cantidad debe ser un número positivo" });
-    if (isNaN(precio) || precio < 0) return res.status(400).json({ message: "precioUnitario inválido" });
 
     const producto = await prisma.producto.findUnique({
       where: { id: Number(productoId) },
-      select: { stockActual: true },
+      select: { stockActual: true, costo_material: true },
     });
     if (!producto) return res.status(404).json({ message: "Producto no encontrado" });
     if (producto.stockActual < cant) {
@@ -167,6 +165,11 @@ exports.registrarSalida = async (req, res) => {
         message: `Stock insuficiente: disponible ${producto.stockActual}, solicitado ${cant}`,
       });
     }
+
+    // Sin precioUnitario (ej. consumo interno de un proyecto, sin venta de por medio):
+    // se valoriza al costo del producto, no al precio de venta.
+    const precio = precioUnitario !== undefined ? Number(precioUnitario) : producto.costo_material;
+    if (isNaN(precio) || precio < 0) return res.status(400).json({ message: "precioUnitario inválido" });
 
     const precioTotal = parseFloat((cant * precio).toFixed(2));
 
