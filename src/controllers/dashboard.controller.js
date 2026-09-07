@@ -108,6 +108,14 @@ const KIND_HANDLERS = {
 
   "btl.productos": async () => ({ activos: await prisma.producto.count({ where: { activo: true } }) }),
 
+  almacen: async () => {
+    const [productos, sinStock] = await Promise.all([
+      prisma.producto.count({ where: { activo: true } }),
+      prisma.producto.count({ where: { activo: true, stockActual: { lte: 0 } } }),
+    ]);
+    return { productos, sinStock };
+  },
+
   dashboard: async () => ({}),
   perfil: async () => ({}),
 };
