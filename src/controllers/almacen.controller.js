@@ -254,9 +254,14 @@ exports.registrarSalida = async (req, res) => {
 
     const item = await prisma.itemAlmacen.findUnique({
       where: { id: Number(productoId) },
-      select: { stockActual: true, costoUnitario: true },
+      select: { stockActual: true, costoUnitario: true, empresa: true },
     });
     if (!item) return res.status(404).json({ message: "Ítem no encontrado" });
+    // El puente de servicio (seguimiento-actividades) es solo de BTL/Outdoor —
+    // nunca debe poder descontar stock de Netwise, aunque el llamador lo pida.
+    if (req.user.esSistema && item.empresa !== "BTL_OUTDOOR") {
+      return res.status(403).json({ message: "Este ítem no pertenece a BTL/Outdoor" });
+    }
     if (item.stockActual < cant) {
       return res.status(400).json({
         message: `Stock insuficiente: disponible ${item.stockActual}, solicitado ${cant}`,
