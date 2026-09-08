@@ -1,7 +1,7 @@
 const prisma = require("../config/prisma");
 
 const ITEM_SELECT = {
-  id: true, codigo: true, nombre: true, tipo: true,
+  id: true, codigo: true, nombre: true, tipo: true, empresa: true,
   categoria: true, unidad: true, ubicacion: true,
   stockMinimo: true, stockMaximo: true, stockActual: true,
   costoUnitario: true, proveedorNombre: true, activo: true,
@@ -11,14 +11,15 @@ const ITEM_SELECT = {
 
 exports.listarItems = async (req, res) => {
   try {
-    const { tipo, categoria, incluirInactivos } = req.query;
+    const { tipo, empresa, categoria, incluirInactivos } = req.query;
     const where = {};
     if (!incluirInactivos) where.activo = true;
     if (tipo) where.tipo = tipo;
+    if (empresa) where.empresa = empresa;
     if (categoria) where.categoria = categoria;
 
     const items = await prisma.itemAlmacen.findMany({
-      where, select: ITEM_SELECT, orderBy: [{ tipo: "asc" }, { nombre: "asc" }],
+      where, select: ITEM_SELECT, orderBy: [{ empresa: "asc" }, { tipo: "asc" }, { nombre: "asc" }],
     });
     res.json(items);
   } catch (error) {
@@ -30,20 +31,24 @@ exports.listarItems = async (req, res) => {
 exports.crearItem = async (req, res) => {
   try {
     const {
-      codigo, nombre, tipo, categoria, unidad, ubicacion,
+      codigo, nombre, tipo, empresa, categoria, unidad, ubicacion,
       stockMinimo, stockMaximo, costoUnitario, proveedorNombre,
     } = req.body;
 
     if (!codigo || !nombre || !tipo || !categoria || !unidad) {
       return res.status(400).json({ message: "Faltan campos requeridos: codigo, nombre, tipo, categoria, unidad" });
     }
-    if (!["INSUMO", "PRODUCTO_TERMINADO"].includes(tipo)) {
+    if (!["INSUMO", "PRODUCTO_TERMINADO", "HERRAMIENTA", "MAQUINARIA_EQUIPO"].includes(tipo)) {
       return res.status(400).json({ message: "tipo inválido" });
+    }
+    if (empresa && !["BTL_OUTDOOR", "NETWISE"].includes(empresa)) {
+      return res.status(400).json({ message: "empresa inválida" });
     }
 
     const item = await prisma.itemAlmacen.create({
       data: {
         codigo, nombre, tipo, categoria, unidad,
+        empresa: empresa || "BTL_OUTDOOR",
         ubicacion: ubicacion || null,
         stockMinimo: stockMinimo !== undefined ? Number(stockMinimo) : 0,
         stockMaximo: stockMaximo !== undefined ? Number(stockMaximo) : 0,
@@ -104,14 +109,15 @@ exports.eliminarItem = async (req, res) => {
 /* ── Stock (vista resumida para selects y tablero) ────────────────────────── */
 exports.stock = async (req, res) => {
   try {
-    const { tipo, categoria } = req.query;
+    const { tipo, empresa, categoria } = req.query;
     const where = { activo: true };
     if (tipo) where.tipo = tipo;
+    if (empresa) where.empresa = empresa;
     if (categoria) where.categoria = categoria;
 
     const items = await prisma.itemAlmacen.findMany({
       where,
-      select: { id: true, codigo: true, nombre: true, tipo: true, categoria: true, unidad: true, stockActual: true },
+      select: { id: true, codigo: true, nombre: true, tipo: true, empresa: true, categoria: true, unidad: true, stockActual: true },
       orderBy: { nombre: "asc" },
     });
 

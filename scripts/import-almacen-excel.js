@@ -3,9 +3,13 @@
  * (hoja "INVENTARIO ALMACEN") hacia el modelo ItemAlmacen.
  *
  * Alcance (confirmado con el usuario):
- *  - Solo ítems de BTL/Outdoor (código empieza con "Z"), no Netwise ("N").
- *  - Solo categoría "Insumos" y "Productos Terminados" — Herramientas,
- *    Maquinaria y Equipos, y Muebles y Enseres quedan fuera del Almacén.
+ *  - BTL/Outdoor (código "Z"): solo Insumos y Productos Terminados —
+ *    Herramientas/Maquinaria/Muebles quedan fuera, son activos fijos.
+ *  - Netwise (código "N"): Netwise no tiene insumos ni productos terminados
+ *    propios en el Excel — todo su inventario es Herramientas y Maquinaria
+ *    y Equipos, así que esas dos SÍ entran para Netwise (aunque para
+ *    BTL/Outdoor queden excluidas). Muebles y Enseres queda fuera para
+ *    ambas empresas.
  *  - Sin receta/BOM (no existe en el Excel): cada ítem entra tal cual con
  *    su stock actual de hoy; no se importa el historial de movimientos
  *    (el stock actual ya es el neto de esa historia).
@@ -24,10 +28,27 @@ const { PrismaClient } = require("@prisma/client");
 const prisma = new PrismaClient();
 const ARCHIVO = path.join(__dirname, "..", "data", "ALMACEN_INVENTARIO1.xlsx");
 
-const CATEGORIA_ENUM = {
+const TIPO_POR_CATEGORIA = {
   "Insumos": "INSUMO",
   "Productos Terminados": "PRODUCTO_TERMINADO",
+  "Herramientas": "HERRAMIENTA",
+  "Maquinaria y Equipos": "MAQUINARIA_EQUIPO",
 };
+
+const ABREV_POR_CATEGORIA = {
+  "Insumos": "INS",
+  "Productos Terminados": "PTR",
+  "Herramientas": "HER",
+  "Maquinaria y Equipos": "MAQ",
+};
+
+// Categorías que entran al Almacén, por empresa (código Z / N).
+const CATEGORIAS_PERMITIDAS = {
+  Z: ["Insumos", "Productos Terminados"],
+  N: ["Herramientas", "Maquinaria y Equipos", "Insumos", "Productos Terminados"],
+};
+
+const EMPRESA_POR_PREFIJO = { Z: "BTL_OUTDOOR", N: "NETWISE" };
 
 function limpiarMoneda(v) {
   if (!v) return 0;
@@ -43,8 +64,8 @@ function limpiarNumero(v) {
   return isNaN(n) ? 0 : n;
 }
 
-// Sub-categoría (ej. "PVC", "Vinil", "Señaletica fotoluminiscente 30X20") a partir
-// del número de sub-categoría embebido en el código (ej. "ZOPEINS003-01" -> "003"),
+// Sub-categoría (ej. "PVC", "Vinil", "Monitor", "Martillos") a partir del
+// número de sub-categoría embebido en el código (ej. "ZOPEINS003-01" -> "003"),
 // cruzado con la hoja "Categoría" que mapea número -> nombre, por categoría.
 function construirMapaSubcategorias(wb) {
   const sheet = wb.Sheets["Categoría"];
@@ -57,8 +78,8 @@ function construirMapaSubcategorias(wb) {
     if (abrev) columnasPorAbrev[abrev] = col; // columna del nombre; el número queda en col+1
   });
 
-  const mapa = {}; // { INS: { "003": "PVC" }, PTR: { "001": "Señaletica..." } }
-  for (const abrev of ["INS", "PTR"]) {
+  const mapa = {}; // { INS: { "003": "PVC" }, MAQ: { "001": "Monitor" }, ... }
+  for (const abrev of ["INS", "PTR", "MAQ", "HER"]) {
     const col = columnasPorAbrev[abrev];
     mapa[abrev] = {};
     if (col === undefined) continue;
@@ -71,11 +92,11 @@ function construirMapaSubcategorias(wb) {
   return mapa;
 }
 
-function subcategoriaDe(codigo, categoriaAbrev, mapaSubcat) {
+function subcategoriaDe(codigo, categoriaExcel, mapaSubcat) {
+  const abrev = ABREV_POR_CATEGORIA[categoriaExcel];
   const m = codigo.match(/(\d{3})-\d+$/);
-  if (!m) return categoriaAbrev === "INS" ? "Insumos" : "Productos Terminados";
-  const nombre = mapaSubcat[categoriaAbrev]?.[m[1]];
-  return nombre || (categoriaAbrev === "INS" ? "Insumos" : "Productos Terminados");
+  const nombre = m && mapaSubcat[abrev]?.[m[1]];
+  return nombre || categoriaExcel;
 }
 
 async function main() {
@@ -86,11 +107,13 @@ async function main() {
   const json = XLSX.utils.sheet_to_json(sheet, { header: 1, raw: false, defval: "" });
   const filas = json.slice(11).filter((r) => r[0]);
 
-  const relevantes = filas.filter(
-    (r) => String(r[0]).startsWith("Z") && CATEGORIA_ENUM[r[2]]
-  );
+  const relevantes = filas.filter((r) => {
+    const prefijo = String(r[0])[0];
+    const permitidas = CATEGORIAS_PERMITIDAS[prefijo];
+    return permitidas && permitidas.includes(r[2]);
+  });
 
-  console.log(`Filas en el Excel: ${filas.length} — relevantes (Z + Insumos/Terminados): ${relevantes.length}`);
+  console.log(`Filas en el Excel: ${filas.length} — relevantes (BTL/Outdoor + Netwise, categorías permitidas): ${relevantes.length}`);
 
   const codigosVistos = new Set();
   let creados = 0, actualizados = 0, renombrados = 0;
@@ -111,13 +134,14 @@ async function main() {
     }
     codigosVistos.add(codigo);
 
-    const tipo = CATEGORIA_ENUM[categoriaExcel];
-    const categoriaAbrev = tipo === "INSUMO" ? "INS" : "PTR";
-    const categoria = subcategoriaDe(codigo, categoriaAbrev, mapaSubcat);
+    const empresa = EMPRESA_POR_PREFIJO[codigo[0]];
+    const tipo = TIPO_POR_CATEGORIA[categoriaExcel];
+    const categoria = subcategoriaDe(codigo, categoriaExcel, mapaSubcat);
 
     const data = {
       nombre: String(descripcion).trim(),
       tipo,
+      empresa,
       categoria,
       unidad: String(unidad).trim() || "Unidad",
       ubicacion: String(ubicacion).trim() || null,
