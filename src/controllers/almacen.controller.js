@@ -1,41 +1,135 @@
 const prisma = require("../config/prisma");
 
-// ── Stock actual por producto ─────────────────────────────────────────────────
-exports.stock = async (req, res) => {
-  try {
-    const { categoria } = req.query;
+const ITEM_SELECT = {
+  id: true, codigo: true, nombre: true, tipo: true,
+  categoria: true, unidad: true, ubicacion: true,
+  stockMinimo: true, stockMaximo: true, stockActual: true,
+  costoUnitario: true, proveedorNombre: true, activo: true,
+};
 
-    const where = { activo: true };
+/* ── Catálogo (insumos + productos terminados) ────────────────────────────── */
+
+exports.listarItems = async (req, res) => {
+  try {
+    const { tipo, categoria, incluirInactivos } = req.query;
+    const where = {};
+    if (!incluirInactivos) where.activo = true;
+    if (tipo) where.tipo = tipo;
     if (categoria) where.categoria = categoria;
 
-    const productos = await prisma.producto.findMany({
-      where,
-      select: {
-        id: true,
-        nombre: true,
-        servicio: true,
-        categoria: true,
-        unidad: true,
-        stockActual: true,
+    const items = await prisma.itemAlmacen.findMany({
+      where, select: ITEM_SELECT, orderBy: [{ tipo: "asc" }, { nombre: "asc" }],
+    });
+    res.json(items);
+  } catch (error) {
+    console.error("❌ Error al listar ítems de almacén:", error);
+    res.status(500).json({ message: "Error al listar ítems de almacén" });
+  }
+};
+
+exports.crearItem = async (req, res) => {
+  try {
+    const {
+      codigo, nombre, tipo, categoria, unidad, ubicacion,
+      stockMinimo, stockMaximo, costoUnitario, proveedorNombre,
+    } = req.body;
+
+    if (!codigo || !nombre || !tipo || !categoria || !unidad) {
+      return res.status(400).json({ message: "Faltan campos requeridos: codigo, nombre, tipo, categoria, unidad" });
+    }
+    if (!["INSUMO", "PRODUCTO_TERMINADO"].includes(tipo)) {
+      return res.status(400).json({ message: "tipo inválido" });
+    }
+
+    const item = await prisma.itemAlmacen.create({
+      data: {
+        codigo, nombre, tipo, categoria, unidad,
+        ubicacion: ubicacion || null,
+        stockMinimo: stockMinimo !== undefined ? Number(stockMinimo) : 0,
+        stockMaximo: stockMaximo !== undefined ? Number(stockMaximo) : 0,
+        costoUnitario: costoUnitario !== undefined ? Number(costoUnitario) : 0,
+        proveedorNombre: proveedorNombre || null,
       },
+      select: ITEM_SELECT,
+    });
+    res.status(201).json(item);
+  } catch (error) {
+    if (error.code === "P2002") return res.status(400).json({ message: "Ya existe un ítem con ese código" });
+    console.error("❌ Error al crear ítem de almacén:", error);
+    res.status(500).json({ message: "Error al crear ítem de almacén" });
+  }
+};
+
+exports.actualizarItem = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const {
+      nombre, categoria, unidad, ubicacion,
+      stockMinimo, stockMaximo, costoUnitario, proveedorNombre, activo,
+    } = req.body;
+
+    const item = await prisma.itemAlmacen.update({
+      where: { id: Number(id) },
+      data: {
+        ...(nombre !== undefined && { nombre }),
+        ...(categoria !== undefined && { categoria }),
+        ...(unidad !== undefined && { unidad }),
+        ...(ubicacion !== undefined && { ubicacion: ubicacion || null }),
+        ...(stockMinimo !== undefined && { stockMinimo: Number(stockMinimo) }),
+        ...(stockMaximo !== undefined && { stockMaximo: Number(stockMaximo) }),
+        ...(costoUnitario !== undefined && { costoUnitario: Number(costoUnitario) }),
+        ...(proveedorNombre !== undefined && { proveedorNombre: proveedorNombre || null }),
+        ...(activo !== undefined && { activo }),
+      },
+      select: ITEM_SELECT,
+    });
+    res.json(item);
+  } catch (error) {
+    console.error("❌ Error al actualizar ítem de almacén:", error);
+    res.status(500).json({ message: "Error al actualizar ítem de almacén" });
+  }
+};
+
+exports.eliminarItem = async (req, res) => {
+  try {
+    const { id } = req.params;
+    await prisma.itemAlmacen.update({ where: { id: Number(id) }, data: { activo: false } });
+    res.json({ ok: true });
+  } catch (error) {
+    console.error("❌ Error al desactivar ítem de almacén:", error);
+    res.status(500).json({ message: "Error al desactivar ítem de almacén" });
+  }
+};
+
+/* ── Stock (vista resumida para selects y tablero) ────────────────────────── */
+exports.stock = async (req, res) => {
+  try {
+    const { tipo, categoria } = req.query;
+    const where = { activo: true };
+    if (tipo) where.tipo = tipo;
+    if (categoria) where.categoria = categoria;
+
+    const items = await prisma.itemAlmacen.findMany({
+      where,
+      select: { id: true, codigo: true, nombre: true, tipo: true, categoria: true, unidad: true, stockActual: true },
       orderBy: { nombre: "asc" },
     });
 
-    res.json(productos);
+    res.json(items);
   } catch (error) {
     console.error("❌ Error al obtener stock:", error);
     res.status(500).json({ message: "Error al obtener stock" });
   }
 };
 
-// ── Listar movimientos (filtrable por tipo, producto y rango de fechas) ──────
+// ── Listar movimientos (filtrable por tipo, ítem y rango de fechas) ─────────
 exports.listarMovimientos = async (req, res) => {
   try {
     const { tipo, productoId, desde, hasta } = req.query;
 
     const where = {};
     if (tipo) where.tipo = tipo;
-    if (productoId) where.productoId = Number(productoId);
+    if (productoId) where.itemAlmacenId = Number(productoId);
     if (desde || hasta) {
       where.fecha = {};
       if (desde) where.fecha.gte = new Date(desde);
@@ -45,7 +139,7 @@ exports.listarMovimientos = async (req, res) => {
     const movimientos = await prisma.movimientoAlmacen.findMany({
       where,
       include: {
-        producto: { select: { id: true, nombre: true, servicio: true, unidad: true } },
+        item: { select: { id: true, codigo: true, nombre: true, tipo: true, unidad: true } },
         proveedor: { select: { id: true, nombre: true } },
         cliente: { select: { id: true, nombreComercial: true } },
         usuario: { select: { id: true, nombre: true } },
@@ -60,18 +154,15 @@ exports.listarMovimientos = async (req, res) => {
   }
 };
 
-// ── Kardex de un producto ─────────────────────────────────────────────────────
-exports.kardexProducto = async (req, res) => {
+// ── Kardex de un ítem ────────────────────────────────────────────────────────
+exports.kardexItem = async (req, res) => {
   try {
-    const productoId = Number(req.params.productoId);
+    const itemId = Number(req.params.productoId);
 
-    const [producto, movimientos] = await Promise.all([
-      prisma.producto.findUnique({
-        where: { id: productoId },
-        select: { id: true, nombre: true, servicio: true, unidad: true, stockActual: true },
-      }),
+    const [item, movimientos] = await Promise.all([
+      prisma.itemAlmacen.findUnique({ where: { id: itemId }, select: ITEM_SELECT }),
       prisma.movimientoAlmacen.findMany({
-        where: { productoId },
+        where: { itemAlmacenId: itemId },
         include: {
           proveedor: { select: { id: true, nombre: true } },
           cliente: { select: { id: true, nombreComercial: true } },
@@ -81,16 +172,16 @@ exports.kardexProducto = async (req, res) => {
       }),
     ]);
 
-    if (!producto) return res.status(404).json({ message: "Producto no encontrado" });
+    if (!item) return res.status(404).json({ message: "Ítem no encontrado" });
 
-    res.json({ producto, movimientos });
+    res.json({ producto: item, movimientos });
   } catch (error) {
     console.error("❌ Error al obtener kardex:", error);
     res.status(500).json({ message: "Error al obtener kardex" });
   }
 };
 
-// ── Registrar entrada (Compras) ───────────────────────────────────────────────
+// ── Registrar entrada (compra de insumo, o ingreso de producto terminado) ───
 exports.registrarEntrada = async (req, res) => {
   try {
     const { productoId, proveedorId, cantidad, precioUnitario, fecha, notas } = req.body;
@@ -110,7 +201,7 @@ exports.registrarEntrada = async (req, res) => {
       prisma.movimientoAlmacen.create({
         data: {
           tipo: "ENTRADA",
-          productoId: Number(productoId),
+          itemAlmacenId: Number(productoId),
           proveedorId: proveedorId ? Number(proveedorId) : null,
           cantidad: cant,
           precioUnitario: precio,
@@ -120,11 +211,11 @@ exports.registrarEntrada = async (req, res) => {
           usuarioId: req.user.id,
         },
         include: {
-          producto: { select: { id: true, nombre: true, servicio: true, unidad: true } },
+          item: { select: { id: true, codigo: true, nombre: true, tipo: true, unidad: true } },
           proveedor: { select: { id: true, nombre: true } },
         },
       }),
-      prisma.producto.update({
+      prisma.itemAlmacen.update({
         where: { id: Number(productoId) },
         data: { stockActual: { increment: cant } },
       }),
@@ -155,20 +246,20 @@ exports.registrarSalida = async (req, res) => {
     const cant = Number(cantidad);
     if (isNaN(cant) || cant <= 0) return res.status(400).json({ message: "cantidad debe ser un número positivo" });
 
-    const producto = await prisma.producto.findUnique({
+    const item = await prisma.itemAlmacen.findUnique({
       where: { id: Number(productoId) },
-      select: { stockActual: true, costo_material: true },
+      select: { stockActual: true, costoUnitario: true },
     });
-    if (!producto) return res.status(404).json({ message: "Producto no encontrado" });
-    if (producto.stockActual < cant) {
+    if (!item) return res.status(404).json({ message: "Ítem no encontrado" });
+    if (item.stockActual < cant) {
       return res.status(400).json({
-        message: `Stock insuficiente: disponible ${producto.stockActual}, solicitado ${cant}`,
+        message: `Stock insuficiente: disponible ${item.stockActual}, solicitado ${cant}`,
       });
     }
 
     // Sin precioUnitario (ej. consumo interno de un proyecto, sin venta de por medio):
-    // se valoriza al costo del producto, no al precio de venta.
-    const precio = precioUnitario !== undefined ? Number(precioUnitario) : producto.costo_material;
+    // se valoriza al costo del ítem, no a un precio de venta.
+    const precio = precioUnitario !== undefined ? Number(precioUnitario) : item.costoUnitario;
     if (isNaN(precio) || precio < 0) return res.status(400).json({ message: "precioUnitario inválido" });
 
     const precioTotal = parseFloat((cant * precio).toFixed(2));
@@ -177,7 +268,7 @@ exports.registrarSalida = async (req, res) => {
       prisma.movimientoAlmacen.create({
         data: {
           tipo: "SALIDA",
-          productoId: Number(productoId),
+          itemAlmacenId: Number(productoId),
           clienteId: clienteId ? Number(clienteId) : null,
           proyectoExternoId: proyectoExternoId || null,
           cantidad: cant,
@@ -189,11 +280,11 @@ exports.registrarSalida = async (req, res) => {
           usuarioId: req.user.id,
         },
         include: {
-          producto: { select: { id: true, nombre: true, servicio: true, unidad: true } },
+          item: { select: { id: true, codigo: true, nombre: true, tipo: true, unidad: true } },
           cliente: { select: { id: true, nombreComercial: true } },
         },
       }),
-      prisma.producto.update({
+      prisma.itemAlmacen.update({
         where: { id: Number(productoId) },
         data: { stockActual: { decrement: cant } },
       }),

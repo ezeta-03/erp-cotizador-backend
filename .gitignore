@@ -32,3 +32,6 @@ RENDER-CONFIGURACION.md
 
 # Credenciales de cuenta de servicio (Firebase Admin SDK, etc.)
 /secrets/
+
+# Datos reales de negocio (inventario, etc.) — no deben trackearse
+/data/

@@ -92,12 +92,10 @@ model Producto {
   origen          String              @default("CSV")
   tipoMedida      TipoMedida          @default(UNIDAD)
   nombre          String?
-  stockActual     Float               @default(0)
   createdAt       DateTime            @default(now())
   updatedAt       DateTime            @updatedAt
   items           CotizacionItem[]
   adicionales     ProductoAdicional[]
-  movimientosAlmacen MovimientoAlmacen[]
 
   @@index([categoria])
   @@index([servicio])
@@ -424,15 +422,51 @@ enum TipoMovimientoAlmacen {
   SALIDA
 }
 
-// Kardex de almacén: cada entrada (compra a proveedor) o salida (venta a
-// cliente, o consumo de un proyecto de seguimiento-actividades) de un
-// producto. Producto.stockActual se mantiene denormalizado y se actualiza
-// dentro de la misma transacción que crea el movimiento.
+enum TipoItemAlmacen {
+  INSUMO
+  PRODUCTO_TERMINADO
+}
+
+// Inventario físico real (insumos comprados + productos terminados ya armados),
+// separado a propósito del catálogo de Producto que usa Cotizaciones/BTL para
+// armar presupuestos — son dos catálogos distintos aunque ambos digan "producto".
+// No hay receta/BOM: un producto terminado se registra como entrada manual
+// (ya armado), no se descuenta automáticamente de los insumos que llevó.
+model ItemAlmacen {
+  id            Int                 @id @default(autoincrement())
+  codigo        String              @unique
+  nombre        String
+  tipo          TipoItemAlmacen
+  categoria     String
+  unidad        String
+  ubicacion     String?
+  stockMinimo   Float               @default(0)
+  stockMaximo   Float               @default(0)
+  stockActual   Float               @default(0)
+  costoUnitario Float               @default(0)
+  // Texto libre, no una relación a Proveedor: ese modelo es específico de
+  // contratos de alquiler de paneles (plazo, costo mensual) y no encaja con
+  // "a quién le compramos este insumo" — acá solo es un nombre de referencia.
+  proveedorNombre String?
+  activo        Boolean             @default(true)
+  createdAt     DateTime            @default(now())
+  updatedAt     DateTime            @updatedAt
+  movimientos   MovimientoAlmacen[]
+
+  @@index([tipo])
+  @@index([categoria])
+}
+
+// Kardex de almacén: cada entrada (compra, o ingreso de un producto terminado
+// recién armado) o salida (venta a cliente, o consumo de un proyecto de
+// seguimiento-actividades) de un ítem. ItemAlmacen.stockActual se mantiene
+// denormalizado y se actualiza dentro de la misma transacción que crea el
+// movimiento.
 model MovimientoAlmacen {
   id                Int                    @id @default(autoincrement())
   tipo              TipoMovimientoAlmacen
-  productoId        Int
-  producto          Producto               @relation(fields: [productoId], references: [id])
+  itemAlmacenId     Int
+  item              ItemAlmacen            @relation(fields: [itemAlmacenId], references: [id])
   cantidad          Float
   precioUnitario    Float
   precioTotal       Float
@@ -448,7 +482,7 @@ model MovimientoAlmacen {
   fecha             DateTime               @default(now())
   createdAt         DateTime               @default(now())
 
-  @@index([productoId])
+  @@index([itemAlmacenId])
   @@index([tipo])
   @@index([proveedorId])
   @@index([clienteId])

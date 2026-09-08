@@ -4,11 +4,17 @@ const servicioOAuth = require("../middlewares/servicioOAuth.middleware");
 const allowRoles    = require("../middlewares/role.middleware");
 const ctrl          = require("../controllers/almacen.controller");
 
+// Catálogo (insumos + productos terminados)
+router.get   ("/items",       auth, allowRoles("ADMIN", "VENTAS", "CONTABLE"), ctrl.listarItems);
+router.post  ("/items",       auth, allowRoles("ADMIN"),                       ctrl.crearItem);
+router.put   ("/items/:id",   auth, allowRoles("ADMIN"),                       ctrl.actualizarItem);
+router.delete("/items/:id",   auth, allowRoles("ADMIN"),                       ctrl.eliminarItem);
+
 // /stock también acepta al puente de seguimiento-actividades (clave de servicio),
 // para alimentar el selector de productos al pedir insumos desde un Proyecto.
 router.get ("/stock",                servicioOAuth(auth), allowRoles("ADMIN", "VENTAS", "CONTABLE"), ctrl.stock);
 router.get ("/movimientos",          auth, allowRoles("ADMIN", "CONTABLE"),           ctrl.listarMovimientos);
-router.get ("/:productoId/kardex",   auth, allowRoles("ADMIN", "CONTABLE"),           ctrl.kardexProducto);
+router.get ("/:productoId/kardex",   auth, allowRoles("ADMIN", "CONTABLE"),           ctrl.kardexItem);
 router.post("/entradas",             auth,               allowRoles("ADMIN"),           ctrl.registrarEntrada);
 // /salidas también acepta al puente de seguimiento-actividades (clave de servicio
 // en X-Almacen-Bridge-Key), para que un Proyecto pueda pedir insumos del almacén.

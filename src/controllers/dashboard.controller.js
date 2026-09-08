@@ -110,8 +110,8 @@ const KIND_HANDLERS = {
 
   almacen: async () => {
     const [productos, sinStock] = await Promise.all([
-      prisma.producto.count({ where: { activo: true } }),
-      prisma.producto.count({ where: { activo: true, stockActual: { lte: 0 } } }),
+      prisma.itemAlmacen.count({ where: { activo: true } }),
+      prisma.itemAlmacen.count({ where: { activo: true, stockActual: { lte: 0 } } }),
     ]);
     return { productos, sinStock };
   },
