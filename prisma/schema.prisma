@@ -39,6 +39,7 @@ model Usuario {
   logsRealizados           UsuarioLog[]    @relation("LogsRealizados")
   panelWidgets             PanelWidget[]
   movimientosAlmacen       MovimientoAlmacen[]
+  ordenesAlmacen           OrdenAlmacen[]
 }
 
 // Acomodo personal del panel de bienvenida (bento): qué bloques tiene cada
@@ -75,6 +76,7 @@ model Cliente {
   reservas        Reserva[]
   solicitudesMargen SolicitudMargen[]
   movimientosAlmacen MovimientoAlmacen[]
+  ordenesAlmacen    OrdenAlmacen[]
 }
 
 model Producto {
@@ -448,6 +450,9 @@ model ItemAlmacen {
   nombre        String
   tipo          TipoItemAlmacen
   empresa       EmpresaItemAlmacen  @default(BTL_OUTDOOR)
+  // Departamento dentro de la empresa (Ventas, Operaciones, Diseño, etc.),
+  // tal como viene codificado en el propio código del ítem.
+  departamento  String?
   categoria     String
   unidad        String
   ubicacion     String?
@@ -463,10 +468,48 @@ model ItemAlmacen {
   createdAt     DateTime            @default(now())
   updatedAt     DateTime            @updatedAt
   movimientos   MovimientoAlmacen[]
+  ordenItems    OrdenAlmacenItem[]
 
   @@index([tipo])
   @@index([categoria])
   @@index([empresa])
+}
+
+// Solicitud/picking-list de almacén con varias líneas (como una Cotización
+// con varios ítems) — se llena ANTES de sacar o ingresar los materiales,
+// se imprime para juntarlos físicamente, y al confirmarse genera un
+// MovimientoAlmacen por cada línea. No reemplaza a /entradas ni /salidas
+// (que siguen sirviendo para registrar un solo ítem suelto) — es para
+// cuando se necesitan varios ítems juntos bajo una sola orden.
+model OrdenAlmacen {
+  id                Int                   @id @default(autoincrement())
+  tipo              TipoMovimientoAlmacen
+  ordenServicio     String?
+  clienteId         Int?
+  cliente           Cliente?              @relation(fields: [clienteId], references: [id])
+  proyectoExternoId String?
+  usuarioId         Int
+  usuario           Usuario               @relation(fields: [usuarioId], references: [id])
+  notas             String?
+  fecha             DateTime              @default(now())
+  createdAt         DateTime              @default(now())
+  items             OrdenAlmacenItem[]
+  movimientos       MovimientoAlmacen[]
+
+  @@index([tipo])
+  @@index([fecha])
+}
+
+model OrdenAlmacenItem {
+  id             Int          @id @default(autoincrement())
+  ordenId        Int
+  orden          OrdenAlmacen @relation(fields: [ordenId], references: [id])
+  itemAlmacenId  Int
+  item           ItemAlmacen  @relation(fields: [itemAlmacenId], references: [id])
+  cantidad       Float
+  precioUnitario Float
+
+  @@index([ordenId])
 }
 
 // Kardex de almacén: cada entrada (compra, o ingreso de un producto terminado
@@ -493,10 +536,13 @@ model MovimientoAlmacen {
   notas             String?
   fecha             DateTime               @default(now())
   createdAt         DateTime               @default(now())
+  ordenId           Int?
+  orden             OrdenAlmacen?          @relation(fields: [ordenId], references: [id])
 
   @@index([itemAlmacenId])
   @@index([tipo])
   @@index([proveedorId])
   @@index([clienteId])
   @@index([proyectoExternoId])
+  @@index([ordenId])
 }

@@ -50,6 +50,21 @@ const CATEGORIAS_PERMITIDAS = {
 
 const EMPRESA_POR_PREFIJO = { Z: "BTL_OUTDOOR", N: "NETWISE" };
 
+// Departamento (hoja "Área"): segundo segmento del código, 3 letras después
+// de la empresa (ej. "ZOPEINS003-01" -> "OPE" -> Operaciones).
+const DEPARTAMENTO_POR_CODIGO = {
+  VEN: "Ventas / Comercial",
+  OPE: "Operaciones",
+  GER: "Gerencia General",
+  DIS: "Diseño",
+  OFI: "Toda la empresa",
+};
+
+function departamentoDe(codigo) {
+  const area = codigo.slice(1, 4);
+  return DEPARTAMENTO_POR_CODIGO[area] || null;
+}
+
 function limpiarMoneda(v) {
   if (!v) return 0;
   // "S/.21.42" -> "21.42" (quitar el prefijo de moneda entero, no filtrar
@@ -142,6 +157,7 @@ async function main() {
       nombre: String(descripcion).trim(),
       tipo,
       empresa,
+      departamento: departamentoDe(codigo),
       categoria,
       unidad: String(unidad).trim() || "Unidad",
       ubicacion: String(ubicacion).trim() || null,
@@ -163,6 +179,58 @@ async function main() {
   }
 
   console.log(`\n✅ Importación completa: ${creados} creados, ${actualizados} actualizados, ${renombrados} códigos duplicados renombrados.`);
+
+  // ── Códigos pendientes: existen en "CODIFICACIÓN" (ya tienen código
+  // asignado) pero todavía no están en el inventario — se agregan con stock
+  // 0, ya que aún no se han cargado físicamente. Los que ni siquiera tienen
+  // código asignado en CODIFICACIÓN se listan pero NO se importan: no nos
+  // corresponde inventarles un código.
+  const codSheet = wb.Sheets["CODIFICACIÓN"];
+  const codJson = XLSX.utils.sheet_to_json(codSheet, { header: 1, raw: false, defval: "" });
+  const codFilas = codJson.filter((r) => String(r[0]).trim() !== "" && r[0] !== "Descripción");
+
+  const nombrePorAbrev = Object.fromEntries(
+    Object.entries(ABREV_POR_CATEGORIA).map(([nombre, abrev]) => [abrev, nombre])
+  );
+
+  let pendientesCreados = 0, pendientesOmitidos = 0;
+  for (const r of codFilas) {
+    const [descripcion, , , categoriaAbrev, , , codigoCompleto] = r;
+    const codigo = String(codigoCompleto).trim();
+    if (!codigo || codigosVistos.has(codigo)) continue; // ya está en el inventario, o sin código todavía
+
+    const empresa = EMPRESA_POR_PREFIJO[codigo[0]];
+    const nombreCategoria = nombrePorAbrev[categoriaAbrev];
+    const permitidas = empresa && CATEGORIAS_PERMITIDAS[codigo[0]];
+    if (!empresa || !nombreCategoria || !permitidas.includes(nombreCategoria)) {
+      pendientesOmitidos++;
+      continue; // categoría fuera de alcance para esa empresa (ej. Muebles, o Herramienta de BTL/Outdoor)
+    }
+
+    codigosVistos.add(codigo);
+    await prisma.itemAlmacen.create({
+      data: {
+        codigo,
+        nombre: String(descripcion).trim(),
+        tipo: TIPO_POR_CATEGORIA[nombreCategoria],
+        empresa,
+        departamento: departamentoDe(codigo),
+        categoria: subcategoriaDe(codigo, nombreCategoria, mapaSubcat),
+        unidad: "Unidad",
+        stockActual: 0,
+      },
+    });
+    pendientesCreados++;
+  }
+
+  const sinCodigo = codFilas.filter((r) => !String(r[6]).trim());
+  if (pendientesCreados || sinCodigo.length) {
+    console.log(`\n📋 Códigos ya asignados pero pendientes de inventario: ${pendientesCreados} creados con stock 0${pendientesOmitidos ? `, ${pendientesOmitidos} omitidos (categoría fuera de alcance)` : ""}.`);
+    if (sinCodigo.length) {
+      console.log(`⚠️  ${sinCodigo.length} ítems en "CODIFICACIÓN" todavía SIN código asignado — no se importaron (no corresponde inventarles un código):`);
+      sinCodigo.forEach((r) => console.log(`   - ${r[0]}`));
+    }
+  }
 }
 
 main()

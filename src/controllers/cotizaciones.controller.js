@@ -657,13 +657,18 @@ exports.generarPdf = async (req, res) => {
 
     browser = await puppeteer.launch({
       headless: true,
-      args: ["--no-sandbox", "--disable-setuid-sandbox"],
+      // --disable-dev-shm-usage: /dev/shm suele venir muy chico en hosting con
+      // poca RAM (Render free tier) y Chrome se cae al abrir páginas grandes
+      // si no se le dice que use /tmp en su lugar.
+      args: ["--no-sandbox", "--disable-setuid-sandbox", "--disable-dev-shm-usage"],
       timeout: 120000,
     });
 
     const page = await browser.newPage();
     await page.setContent(cotizacionTemplate(cotizacionConGlosa));
-    const pdf = await page.pdf({ format: "A4", printBackground: true });
+    // page.pdf() devuelve un Uint8Array, no un Buffer real — Express no lo
+    // reconoce como binario y lo manda como JSON si no se envuelve acá.
+    const pdf = Buffer.from(await page.pdf({ format: "A4", printBackground: true }));
     await browser.close();
     browser = null;
 
