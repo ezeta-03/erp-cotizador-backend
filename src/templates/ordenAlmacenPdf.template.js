@@ -1,5 +1,6 @@
 module.exports = (orden) => {
-  const { id, tipo, ordenServicio, cliente, proyectoExternoId, usuario, notas, fecha, items } = orden;
+  const { id, tipo, ordenServicio, cliente, proyecto, proyectoExternoId, usuario, notas, fecha, items } = orden;
+  const proyectoNombre = proyecto?.nombre || proyectoExternoId || null;
 
   const fechaStr = fecha
     ? new Date(fecha).toLocaleDateString("es-PE", { day: "2-digit", month: "long", year: "numeric" })
@@ -136,7 +137,7 @@ module.exports = (orden) => {
   </div>
   <div>
     <div class="field-label">Proyecto</div>
-    <div class="field-value ${proyectoExternoId ? "" : "muted"}">${proyectoExternoId || "Sin proyecto asociado"}</div>
+    <div class="field-value ${proyectoNombre ? "" : "muted"}">${proyectoNombre || "Sin proyecto asociado"}</div>
   </div>
 </div>
 

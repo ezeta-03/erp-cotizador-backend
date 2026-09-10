@@ -3,6 +3,7 @@ const puppeteer = require("puppeteer");
 const cotizacionTemplate = require("../templates/cotizacionPdf.template");
 const { generarGlosa } = require("../utils/glosa");
 const { crearProyectoDesdeCotizacion } = require("../services/proyectoBridge");
+const { crearDesdeCotizacion: crearProyectoInterno } = require("./proyectos.controller");
 
 const registrarLog = (client, { cotizacionId, usuarioId, estadoAnterior, estadoNuevo, comentario }) =>
   client.cotizacionLog.create({
@@ -320,9 +321,9 @@ exports.responderCotizacion = async (req, res) => {
       comentario: comentario || null,
     });
 
-    // Al aprobar, crear el Proyecto correspondiente en seguimiento-actividades (Firestore).
-    // Nunca bloquea la aprobación: si Firestore falla, la cotización queda APROBADA igual
-    // y el error queda registrado en proyectoExternoError para reintentar más adelante.
+    // Al aprobar, crear el Proyecto correspondiente en seguimiento-actividades (Firestore)
+    // Y el Proyecto interno del ERP (responsables + comparación contra Almacén). Ninguno
+    // de los dos bloquea la aprobación: si alguno falla, la cotización queda APROBADA igual.
     if (estado === "APROBADA") {
       const vendedor = await prisma.usuario.findUnique({ where: { id: cotizacion.usuarioId } });
       const resultado = await crearProyectoDesdeCotizacion({ cotizacion: updated, cliente, vendedor });
@@ -332,6 +333,7 @@ exports.responderCotizacion = async (req, res) => {
           ? { proyectoExternoId: resultado.id, proyectoExternoError: null }
           : { proyectoExternoError: resultado.error },
       });
+      await crearProyectoInterno({ cotizacion: updated, cliente, proyectoFirestoreId: resultado.id });
     }
 
     res.json(updated);

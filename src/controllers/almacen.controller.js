@@ -1,4 +1,5 @@
 const prisma = require("../config/prisma");
+const { resolverProyectoId } = require("./proyectos.controller");
 
 const ITEM_SELECT = {
   id: true, codigo: true, nombre: true, tipo: true, empresa: true,
@@ -238,7 +239,7 @@ exports.registrarEntrada = async (req, res) => {
 exports.registrarSalida = async (req, res) => {
   try {
     const {
-      productoId, clienteId, proyectoExternoId,
+      productoId, clienteId, proyectoExternoId, proyectoId,
       cantidad, precioUnitario, precioFacturado, fecha, notas,
     } = req.body;
 
@@ -274,6 +275,7 @@ exports.registrarSalida = async (req, res) => {
     if (isNaN(precio) || precio < 0) return res.status(400).json({ message: "precioUnitario inválido" });
 
     const precioTotal = parseFloat((cant * precio).toFixed(2));
+    const proyectoIdResuelto = await resolverProyectoId({ proyectoId, proyectoExternoId });
 
     const [movimiento] = await prisma.$transaction([
       prisma.movimientoAlmacen.create({
@@ -282,6 +284,7 @@ exports.registrarSalida = async (req, res) => {
           itemAlmacenId: Number(productoId),
           clienteId: clienteId ? Number(clienteId) : null,
           proyectoExternoId: proyectoExternoId || null,
+          proyectoId: proyectoIdResuelto,
           cantidad: cant,
           precioUnitario: precio,
           precioTotal,

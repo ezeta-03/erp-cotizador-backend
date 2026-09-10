@@ -40,6 +40,8 @@ model Usuario {
   panelWidgets             PanelWidget[]
   movimientosAlmacen       MovimientoAlmacen[]
   ordenesAlmacen           OrdenAlmacen[]
+  proyectosComoGerente     Proyecto[]          @relation("ProyectoGerenteResponsable")
+  proyectosComoJefe        Proyecto[]          @relation("ProyectoJefeResponsable")
 }
 
 // Acomodo personal del panel de bienvenida (bento): qué bloques tiene cada
@@ -77,6 +79,7 @@ model Cliente {
   solicitudesMargen SolicitudMargen[]
   movimientosAlmacen MovimientoAlmacen[]
   ordenesAlmacen    OrdenAlmacen[]
+  proyectos         Proyecto[]
 }
 
 model Producto {
@@ -132,6 +135,7 @@ model Cotizacion {
   log                 CotizacionLog[]
   reservas            Reserva[]
   solicitudesMargen   SolicitudMargen[]
+  proyecto            Proyecto?
 }
 
 model CotizacionLog {
@@ -488,6 +492,8 @@ model OrdenAlmacen {
   clienteId         Int?
   cliente           Cliente?              @relation(fields: [clienteId], references: [id])
   proyectoExternoId String?
+  proyectoId        Int?
+  proyecto          Proyecto?             @relation(fields: [proyectoId], references: [id])
   usuarioId         Int
   usuario           Usuario               @relation(fields: [usuarioId], references: [id])
   notas             String?
@@ -498,6 +504,7 @@ model OrdenAlmacen {
 
   @@index([tipo])
   @@index([fecha])
+  @@index([proyectoId])
 }
 
 model OrdenAlmacenItem {
@@ -531,6 +538,8 @@ model MovimientoAlmacen {
   cliente           Cliente?               @relation(fields: [clienteId], references: [id])
   precioFacturado   Float?
   proyectoExternoId String?
+  proyectoId        Int?
+  proyecto          Proyecto?              @relation(fields: [proyectoId], references: [id])
   usuarioId         Int
   usuario           Usuario                @relation(fields: [usuarioId], references: [id])
   notas             String?
@@ -544,5 +553,46 @@ model MovimientoAlmacen {
   @@index([proveedorId])
   @@index([clienteId])
   @@index([proyectoExternoId])
+  @@index([proyectoId])
   @@index([ordenId])
+}
+
+enum EstadoProyecto {
+  PLANIFICACION
+  EN_CURSO
+  PAUSADO
+  COMPLETADO
+  CANCELADO
+}
+
+// Proyecto nativo del ERP, nace automáticamente al aprobar una Cotización —
+// en paralelo al Proyecto que se crea en Firestore (seguimiento-actividades),
+// que sigue existiendo para la gestión de actividades día a día. Este vive
+// acá porque necesita responsables reales del ERP y comparar contra el
+// Almacén (proyectado vs. asignado), cosa que Firestore no puede ver.
+// proyectoFirestoreId guarda el id del documento hermano para poder cruzarlos.
+model Proyecto {
+  id                   Int                 @id @default(autoincrement())
+  nombre               String
+  descripcion          String?
+  estado               EstadoProyecto      @default(PLANIFICACION)
+  cotizacionId         Int                 @unique
+  cotizacion           Cotizacion          @relation(fields: [cotizacionId], references: [id])
+  clienteId            Int
+  cliente              Cliente             @relation(fields: [clienteId], references: [id])
+  gerenteResponsableId Int?
+  gerenteResponsable   Usuario?            @relation("ProyectoGerenteResponsable", fields: [gerenteResponsableId], references: [id])
+  jefeResponsableId    Int?
+  jefeResponsable      Usuario?            @relation("ProyectoJefeResponsable", fields: [jefeResponsableId], references: [id])
+  presupuestoEstimado  Float
+  fechaInicio          DateTime
+  fechaFin             DateTime
+  proyectoFirestoreId  String?
+  createdAt            DateTime            @default(now())
+  updatedAt            DateTime            @updatedAt
+  ordenes              OrdenAlmacen[]
+  movimientos          MovimientoAlmacen[]
+
+  @@index([clienteId])
+  @@index([estado])
 }

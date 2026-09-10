@@ -1,10 +1,12 @@
 const prisma = require("../config/prisma");
 const puppeteer = require("puppeteer");
 const ordenAlmacenTemplate = require("../templates/ordenAlmacenPdf.template");
+const { resolverProyectoId } = require("./proyectos.controller");
 
 const ORDEN_INCLUDE = {
   cliente: { select: { id: true, nombreComercial: true } },
   usuario: { select: { id: true, nombre: true } },
+  proyecto: { select: { id: true, nombre: true } },
   items: {
     include: { item: { select: { id: true, codigo: true, nombre: true, unidad: true } } },
   },
@@ -46,7 +48,7 @@ exports.obtenerOrden = async (req, res) => {
 /* ── Crear orden (varias líneas) — genera un MovimientoAlmacen por línea ──── */
 exports.crearOrden = async (req, res) => {
   try {
-    const { tipo, ordenServicio, clienteId, proyectoExternoId, notas, fecha, items } = req.body;
+    const { tipo, ordenServicio, clienteId, proyectoExternoId, proyectoId, notas, fecha, items } = req.body;
 
     if (!["ENTRADA", "SALIDA"].includes(tipo)) {
       return res.status(400).json({ message: "tipo inválido (ENTRADA o SALIDA)" });
@@ -84,6 +86,7 @@ exports.crearOrden = async (req, res) => {
     }
 
     const fechaOrden = fecha ? new Date(fecha) : new Date();
+    const proyectoIdResuelto = await resolverProyectoId({ proyectoId, proyectoExternoId });
 
     const orden = await prisma.$transaction(async (tx) => {
       const nuevaOrden = await tx.ordenAlmacen.create({
@@ -92,6 +95,7 @@ exports.crearOrden = async (req, res) => {
           ordenServicio: ordenServicio || null,
           clienteId: clienteId ? Number(clienteId) : null,
           proyectoExternoId: proyectoExternoId || null,
+          proyectoId: proyectoIdResuelto,
           notas: notas || null,
           fecha: fechaOrden,
           usuarioId: req.user.id,
@@ -118,6 +122,7 @@ exports.crearOrden = async (req, res) => {
             itemAlmacenId: linea.itemAlmacenId,
             clienteId: tipo === "SALIDA" && clienteId ? Number(clienteId) : null,
             proyectoExternoId: tipo === "SALIDA" ? (proyectoExternoId || null) : null,
+            proyectoId: tipo === "SALIDA" ? proyectoIdResuelto : null,
             cantidad: linea.cantidad,
             precioUnitario: precio,
             precioTotal,
