@@ -149,6 +149,7 @@ exports.listarMovimientos = async (req, res) => {
         item: { select: { id: true, codigo: true, nombre: true, tipo: true, unidad: true } },
         proveedor: { select: { id: true, nombre: true } },
         cliente: { select: { id: true, nombreComercial: true } },
+        proyecto: { select: { id: true, nombre: true } },
         usuario: { select: { id: true, nombre: true } },
       },
       orderBy: { fecha: "desc" },
@@ -296,6 +297,7 @@ exports.registrarSalida = async (req, res) => {
         include: {
           item: { select: { id: true, codigo: true, nombre: true, tipo: true, unidad: true } },
           cliente: { select: { id: true, nombreComercial: true } },
+          proyecto: { select: { id: true, nombre: true } },
         },
       }),
       prisma.itemAlmacen.update({

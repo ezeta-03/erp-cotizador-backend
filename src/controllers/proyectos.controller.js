@@ -1,6 +1,17 @@
 const prisma = require("../config/prisma");
+const { getFirestoreProyectos } = require("../config/firebaseAdmin");
 
 const USUARIO_SELECT = { id: true, nombre: true, email: true };
+
+const ESTADO_FIRESTORE_A_ENUM = {
+  "Planificación": "PLANIFICACION",
+  "En Curso": "EN_CURSO",
+  "Pausado": "PAUSADO",
+  "Completado": "COMPLETADO",
+  "Cancelado": "CANCELADO",
+};
+const mapearEstadoFirestore = (estado) => ESTADO_FIRESTORE_A_ENUM[estado] || "PLANIFICACION";
+const timestampADate = (ts) => ts?.toDate?.() ?? null;
 
 const PROYECTO_INCLUDE_LISTA = {
   cliente: { select: { id: true, nombreComercial: true } },
@@ -72,6 +83,51 @@ exports.obtenerProyecto = async (req, res) => {
   }
 };
 
+// Proyectos de seguimiento-actividades tal cual viven en Firestore, anotados
+// con si ya tienen (o no) un Proyecto interno equivalente en el ERP. Es
+// deliberadamente de solo lectura: no se editan responsables ni estado desde
+// acá, eso se sigue haciendo en seguimiento-actividades.
+exports.listarProyectosExternos = async (req, res) => {
+  try {
+    const snap = await getFirestoreProyectos().collection("proyectos").get();
+
+    const internos = await prisma.proyecto.findMany({
+      where: { proyectoFirestoreId: { not: null } },
+      select: { id: true, proyectoFirestoreId: true },
+    });
+    const internoPorFirestoreId = new Map(internos.map((p) => [p.proyectoFirestoreId, p.id]));
+
+    const proyectos = await Promise.all(
+      snap.docs.map(async (doc) => {
+        const datos = doc.data();
+        const proyectoInternoId = internoPorFirestoreId.get(doc.id) ?? null;
+        return {
+          id: doc.id,
+          nombre: datos.nombre || "(sin nombre)",
+          descripcion: datos.descripcion || null,
+          estado: datos.estado || null,
+          gerenteResponsable: datos.gerenteResponsable || null,
+          jefeResponsable: datos.jefeResponsable || null,
+          presupuestoEstimado: Number(datos.presupuestoEstimado) || 0,
+          presupuestoEjecutado: Number(datos.presupuestoEjecutado) || 0,
+          fechaInicio: timestampADate(datos.fechaInicio),
+          fechaFin: timestampADate(datos.fechaFin),
+          fechaCreacionMs: timestampADate(datos.fechaCreacion)?.getTime() || 0,
+          origenErp: datos.origenErp || null,
+          proyectoInternoId,
+          asignado: proyectoInternoId ? await calcularAsignado(proyectoInternoId) : 0,
+        };
+      })
+    );
+
+    proyectos.sort((a, b) => b.fechaCreacionMs - a.fechaCreacionMs);
+    res.json(proyectos);
+  } catch (error) {
+    console.error("❌ Error al listar proyectos de seguimiento-actividades:", error);
+    res.status(500).json({ message: "No se pudo conectar con seguimiento-actividades" });
+  }
+};
+
 exports.actualizarProyecto = async (req, res) => {
   try {
     const id = Number(req.params.id);
@@ -135,11 +191,49 @@ exports.crearDesdeCotizacion = async ({ cotizacion, cliente, proyectoFirestoreId
   }
 };
 
+// Si el proyecto de Firestore todavía no tiene Proyecto interno (porque no
+// nació de una cotización), se crea un "stub" en cuanto pide algo al
+// Almacén — así su consumo también queda registrado y comparable. Nunca
+// lanza: si Firestore no responde o el id no existe, el movimiento de
+// Almacén sigue sin proyectoId en vez de bloquearse.
+async function crearStubDesdeFirestore(proyectoFirestoreId) {
+  try {
+    const snap = await getFirestoreProyectos().collection("proyectos").doc(proyectoFirestoreId).get();
+    if (!snap.exists) return null;
+    const datos = snap.data();
+
+    const hoy = new Date();
+    const fin = new Date(hoy);
+    fin.setDate(fin.getDate() + DIAS_PLAZO_DEFAULT);
+
+    const nuevo = await prisma.proyecto.create({
+      data: {
+        nombre: datos.nombre || `Proyecto de seguimiento-actividades (${proyectoFirestoreId})`,
+        descripcion: "Proyecto de seguimiento-actividades sin cotización asociada en el ERP.",
+        estado: mapearEstadoFirestore(datos.estado),
+        presupuestoEstimado: Number(datos.presupuestoEstimado) || 0,
+        fechaInicio: timestampADate(datos.fechaInicio) || hoy,
+        fechaFin: timestampADate(datos.fechaFin) || fin,
+        proyectoFirestoreId,
+      },
+    });
+    return nuevo.id;
+  } catch (error) {
+    if (error.code === "P2002") {
+      // Carrera: otro movimiento concurrente ya creó el stub — usamos ese.
+      const existente = await prisma.proyecto.findFirst({ where: { proyectoFirestoreId }, select: { id: true } });
+      return existente?.id ?? null;
+    }
+    console.error("❌ Error creando Proyecto stub desde Firestore:", error.message);
+    return null;
+  }
+}
+
 // Usado por los controllers de Almacén para enlazar un movimiento/orden al
-// Proyecto correcto: si ya viene un proyectoId úsalo, si no, intenta
+// Proyecto correcto: si ya viene un proyectoId úsalo; si no, intenta
 // resolverlo a partir del proyectoExternoId (id de Firestore) que sí manda
-// seguimiento-actividades — así ese flujo queda enlazado sin tener que tocar
-// ese repo.
+// seguimiento-actividades, creando el stub de arriba si hace falta — así ese
+// flujo queda enlazado sin tener que tocar ese repo.
 exports.resolverProyectoId = async ({ proyectoId, proyectoExternoId }) => {
   if (proyectoId) return Number(proyectoId);
   if (!proyectoExternoId) return null;
@@ -147,5 +241,6 @@ exports.resolverProyectoId = async ({ proyectoId, proyectoExternoId }) => {
     where: { proyectoFirestoreId: proyectoExternoId },
     select: { id: true },
   });
-  return proyecto?.id ?? null;
+  if (proyecto) return proyecto.id;
+  return crearStubDesdeFirestore(proyectoExternoId);
 };

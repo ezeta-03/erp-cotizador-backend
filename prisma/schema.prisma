@@ -576,10 +576,14 @@ model Proyecto {
   nombre               String
   descripcion          String?
   estado               EstadoProyecto      @default(PLANIFICACION)
-  cotizacionId         Int                 @unique
-  cotizacion           Cotizacion          @relation(fields: [cotizacionId], references: [id])
-  clienteId            Int
-  cliente              Cliente             @relation(fields: [clienteId], references: [id])
+  // Nulo cuando el Proyecto no nació de una cotización, sino que se creó como
+  // "stub" la primera vez que un proyecto de seguimiento-actividades (que no
+  // pasó por el ERP) pidió insumos al Almacén — así su consumo también queda
+  // registrado y comparable, aunque no tenga cliente ni cotización acá.
+  cotizacionId         Int?                @unique
+  cotizacion           Cotizacion?         @relation(fields: [cotizacionId], references: [id])
+  clienteId            Int?
+  cliente              Cliente?            @relation(fields: [clienteId], references: [id])
   gerenteResponsableId Int?
   gerenteResponsable   Usuario?            @relation("ProyectoGerenteResponsable", fields: [gerenteResponsableId], references: [id])
   jefeResponsableId    Int?
@@ -595,4 +599,5 @@ model Proyecto {
 
   @@index([clienteId])
   @@index([estado])
+  @@unique([proyectoFirestoreId])
 }

@@ -5,8 +5,10 @@ const ctrl       = require("../controllers/proyectos.controller");
 
 router.use(auth);
 
-router.get("/",     allowRoles("ADMIN", "VENTAS", "CONTABLE"), ctrl.listarProyectos);
-router.get("/:id",  allowRoles("ADMIN", "VENTAS", "CONTABLE"), ctrl.obtenerProyecto);
+router.get("/",          allowRoles("ADMIN", "VENTAS", "CONTABLE"), ctrl.listarProyectos);
+// Antes de "/:id" — si no, Express interpreta "externos" como un id.
+router.get("/externos",  allowRoles("ADMIN", "VENTAS", "CONTABLE"), ctrl.listarProyectosExternos);
+router.get("/:id",       allowRoles("ADMIN", "VENTAS", "CONTABLE"), ctrl.obtenerProyecto);
 // Asignar responsables y cambiar estado es solo de Admin, igual que el resto
 // de escritura sobre Almacén.
 router.put("/:id",  allowRoles("ADMIN"), ctrl.actualizarProyecto);
