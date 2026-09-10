@@ -42,6 +42,7 @@ model Usuario {
   ordenesAlmacen           OrdenAlmacen[]
   proyectosComoGerente     Proyecto[]          @relation("ProyectoGerenteResponsable")
   proyectosComoJefe        Proyecto[]          @relation("ProyectoJefeResponsable")
+  solicitudesAlmacenResueltas SolicitudAlmacen[]
 }
 
 // Acomodo personal del panel de bienvenida (bento): qué bloques tiene cada
@@ -473,10 +474,45 @@ model ItemAlmacen {
   updatedAt     DateTime            @updatedAt
   movimientos   MovimientoAlmacen[]
   ordenItems    OrdenAlmacenItem[]
+  solicitudes   SolicitudAlmacen[]
 
   @@index([tipo])
   @@index([categoria])
   @@index([empresa])
+}
+
+enum EstadoSolicitudAlmacen {
+  PENDIENTE
+  APROBADA
+  RECHAZADA
+}
+
+// Pedido de insumos que llega desde seguimiento-actividades (el botón "Pedir
+// insumos al almacén" de un Proyecto) — a diferencia de una salida registrada
+// directamente en el ERP, esta NUNCA descuenta stock por sí sola: queda
+// PENDIENTE hasta que alguien de Almacén la apruebe o la rechace. Al
+// aprobarla recién se crea el MovimientoAlmacen real.
+model SolicitudAlmacen {
+  id                Int                    @id @default(autoincrement())
+  itemAlmacenId     Int
+  item              ItemAlmacen            @relation(fields: [itemAlmacenId], references: [id])
+  cantidad          Float
+  proyectoExternoId String
+  proyectoId        Int?
+  proyecto          Proyecto?              @relation(fields: [proyectoId], references: [id])
+  solicitanteEmail  String?
+  notas             String?
+  estado            EstadoSolicitudAlmacen @default(PENDIENTE)
+  resueltoPorId     Int?
+  resueltoPor       Usuario?               @relation(fields: [resueltoPorId], references: [id])
+  motivoRechazo     String?
+  movimientoId      Int?                   @unique
+  movimiento        MovimientoAlmacen?     @relation(fields: [movimientoId], references: [id])
+  createdAt         DateTime               @default(now())
+  resueltoAt        DateTime?
+
+  @@index([estado])
+  @@index([proyectoExternoId])
 }
 
 // Solicitud/picking-list de almacén con varias líneas (como una Cotización
@@ -547,6 +583,7 @@ model MovimientoAlmacen {
   createdAt         DateTime               @default(now())
   ordenId           Int?
   orden             OrdenAlmacen?          @relation(fields: [ordenId], references: [id])
+  solicitud         SolicitudAlmacen?
 
   @@index([itemAlmacenId])
   @@index([tipo])
@@ -596,6 +633,7 @@ model Proyecto {
   updatedAt            DateTime            @updatedAt
   ordenes              OrdenAlmacen[]
   movimientos          MovimientoAlmacen[]
+  solicitudes          SolicitudAlmacen[]
 
   @@index([clienteId])
   @@index([estado])

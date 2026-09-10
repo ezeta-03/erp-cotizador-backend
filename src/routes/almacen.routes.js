@@ -4,6 +4,7 @@ const servicioOAuth   = require("../middlewares/servicioOAuth.middleware");
 const allowRoles      = require("../middlewares/role.middleware");
 const ctrl            = require("../controllers/almacen.controller");
 const ordenesCtrl     = require("../controllers/ordenesAlmacen.controller");
+const solicitudesCtrl = require("../controllers/solicitudesAlmacen.controller");
 
 // Catálogo (insumos + productos terminados)
 router.get   ("/items",       auth, allowRoles("ADMIN", "VENTAS", "CONTABLE"), ctrl.listarItems);
@@ -25,7 +26,13 @@ router.get ("/movimientos",          auth, allowRoles("ADMIN", "CONTABLE"),     
 router.get ("/:productoId/kardex",   auth, allowRoles("ADMIN", "CONTABLE"),           ctrl.kardexItem);
 router.post("/entradas",             auth,               allowRoles("ADMIN"),           ctrl.registrarEntrada);
 // /salidas también acepta al puente de seguimiento-actividades (clave de servicio
-// en X-Almacen-Bridge-Key), para que un Proyecto pueda pedir insumos del almacén.
+// en X-Almacen-Bridge-Key): si viene de ahí, queda como solicitud PENDIENTE en
+// vez de descontar stock (ver registrarSalida) — las de abajo son para resolverla.
 router.post("/salidas",              servicioOAuth(auth), allowRoles("ADMIN", "VENTAS"), ctrl.registrarSalida);
+
+// Solicitudes de insumos pendientes de aprobación (las que llegan desde seguimiento-actividades)
+router.get ("/solicitudes",             auth, allowRoles("ADMIN", "VENTAS"), solicitudesCtrl.listarSolicitudes);
+router.post("/solicitudes/:id/aprobar", auth, allowRoles("ADMIN", "VENTAS"), solicitudesCtrl.aprobarSolicitud);
+router.post("/solicitudes/:id/rechazar",auth, allowRoles("ADMIN", "VENTAS"), solicitudesCtrl.rechazarSolicitud);
 
 module.exports = router;

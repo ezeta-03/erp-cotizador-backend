@@ -270,6 +270,31 @@ exports.registrarSalida = async (req, res) => {
       });
     }
 
+    // El puente de seguimiento-actividades ya NO descuenta stock directo: queda
+    // como solicitud pendiente hasta que alguien de Almacén (Admin/Ventas) la
+    // apruebe o la rechace desde el ERP.
+    if (req.user.esSistema) {
+      if (!proyectoExternoId) {
+        return res.status(400).json({ message: "proyectoExternoId es requerido para solicitudes desde seguimiento-actividades" });
+      }
+      const proyectoIdResuelto = await resolverProyectoId({ proyectoId, proyectoExternoId });
+      const solicitud = await prisma.solicitudAlmacen.create({
+        data: {
+          itemAlmacenId: Number(productoId),
+          cantidad: cant,
+          proyectoExternoId,
+          proyectoId: proyectoIdResuelto,
+          solicitanteEmail: req.body.solicitanteEmail || null,
+          notas: notas || null,
+        },
+        include: {
+          item: { select: { id: true, codigo: true, nombre: true, unidad: true } },
+          proyecto: { select: { id: true, nombre: true } },
+        },
+      });
+      return res.status(202).json({ pendiente: true, solicitud });
+    }
+
     // Sin precioUnitario (ej. consumo interno de un proyecto, sin venta de por medio):
     // se valoriza al costo del ítem, no a un precio de venta.
     const precio = precioUnitario !== undefined ? Number(precioUnitario) : item.costoUnitario;
