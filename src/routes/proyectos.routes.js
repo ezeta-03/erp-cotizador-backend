@@ -6,6 +6,9 @@ const ctrl       = require("../controllers/proyectos.controller");
 router.use(auth);
 
 router.get("/",          allowRoles("ADMIN", "VENTAS", "CONTABLE"), ctrl.listarProyectos);
+// Un Proyecto puede crearse en cualquier momento, a la par de las
+// cotizaciones — no depende de que exista o se apruebe una.
+router.post("/",         allowRoles("ADMIN", "VENTAS"),             ctrl.crearProyecto);
 // Antes de "/:id" — si no, Express interpreta "externos" como un id.
 router.get("/externos",  allowRoles("ADMIN", "VENTAS", "CONTABLE"), ctrl.listarProyectosExternos);
 router.get("/:id",       allowRoles("ADMIN", "VENTAS", "CONTABLE"), ctrl.obtenerProyecto);

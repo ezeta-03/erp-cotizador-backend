@@ -159,6 +159,40 @@ exports.actualizarProyecto = async (req, res) => {
   }
 };
 
+// Crear un Proyecto a mano, sin pasar por una cotización — un Proyecto puede
+// existir en cualquier momento, en paralelo a las cotizaciones, no solo como
+// consecuencia de aprobar una.
+exports.crearProyecto = async (req, res) => {
+  try {
+    const { nombre, descripcion, clienteId, presupuestoEstimado, fechaInicio, fechaFin } = req.body;
+
+    if (!nombre || !nombre.trim()) {
+      return res.status(400).json({ message: "El nombre del proyecto es obligatorio" });
+    }
+
+    const hoy = new Date();
+    const finDefault = new Date(hoy);
+    finDefault.setDate(finDefault.getDate() + 30);
+
+    const proyecto = await prisma.proyecto.create({
+      data: {
+        nombre: nombre.trim(),
+        descripcion: descripcion || null,
+        clienteId: clienteId ? Number(clienteId) : null,
+        presupuestoEstimado: presupuestoEstimado !== undefined ? Number(presupuestoEstimado) : 0,
+        fechaInicio: fechaInicio ? new Date(fechaInicio) : hoy,
+        fechaFin: fechaFin ? new Date(fechaFin) : finDefault,
+      },
+      include: PROYECTO_INCLUDE_LISTA,
+    });
+
+    res.status(201).json({ ...proyecto, asignado: 0 });
+  } catch (error) {
+    console.error("❌ Error al crear proyecto:", error);
+    res.status(500).json({ message: "Error al crear proyecto" });
+  }
+};
+
 // Crea el Proyecto interno al aprobar una cotización — nunca lanza, igual que
 // el puente hacia Firestore: la aprobación no debe fallar por esto. Si ya
 // existe (reintento de aprobación, por ejemplo), lo deja como está.

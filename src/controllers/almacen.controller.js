@@ -197,6 +197,11 @@ exports.registrarEntrada = async (req, res) => {
     if (!productoId || !cantidad || precioUnitario === undefined) {
       return res.status(400).json({ message: "Faltan campos requeridos: productoId, cantidad, precioUnitario" });
     }
+    // La entrada debe quedar trazable a un documento físico (guía, factura,
+    // boleta, etc.) — sin eso no hay forma de auditar de dónde salió el costo.
+    if (!notas || !notas.trim()) {
+      return res.status(400).json({ message: "Indica el N° de guía, factura o comprobante de esta entrada" });
+    }
 
     const cant = Number(cantidad);
     const precio = Number(precioUnitario);
@@ -247,8 +252,10 @@ exports.registrarSalida = async (req, res) => {
     if (!productoId || !cantidad) {
       return res.status(400).json({ message: "Faltan campos requeridos: productoId, cantidad" });
     }
-    if (!clienteId && !proyectoExternoId) {
-      return res.status(400).json({ message: "La salida debe indicar clienteId y/o proyectoExternoId" });
+    // Toda salida debe quedar anexada a un proyecto — el cliente es un dato
+    // adicional opcional, ya no un sustituto del proyecto.
+    if (!proyectoId && !proyectoExternoId) {
+      return res.status(400).json({ message: "La salida debe indicar un proyecto" });
     }
 
     const cant = Number(cantidad);

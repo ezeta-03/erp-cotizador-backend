@@ -56,8 +56,14 @@ exports.crearOrden = async (req, res) => {
     if (!Array.isArray(items) || items.length === 0) {
       return res.status(400).json({ message: "La orden debe tener al menos un ítem" });
     }
-    if (tipo === "SALIDA" && !clienteId && !proyectoExternoId) {
-      return res.status(400).json({ message: "La orden de salida debe indicar clienteId y/o proyectoExternoId" });
+    // Toda salida debe quedar anexada a un proyecto — el cliente es un dato
+    // adicional opcional, ya no un sustituto del proyecto.
+    if (tipo === "SALIDA" && !proyectoId && !proyectoExternoId) {
+      return res.status(400).json({ message: "La orden de salida debe indicar un proyecto" });
+    }
+    // La entrada debe quedar trazable a un documento físico (guía, factura, etc.).
+    if (tipo === "ENTRADA" && (!notas || !notas.trim())) {
+      return res.status(400).json({ message: "Indica el N° de guía, factura o comprobante de esta orden de entrada" });
     }
 
     const lineas = [];
