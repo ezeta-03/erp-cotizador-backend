@@ -699,3 +699,12 @@ model PresupuestoProyectoItem {
 
   @@index([presupuestoId])
 }
+
+// Módulos del menú habilitados por rol (toggles del Admin en Usuarios).
+// Sin fila para un rol = todos sus módulos habilitados. Solo aplica a
+// VENTAS y CONTABLE; ADMIN siempre ve todo y CLIENTE tiene su propio menú.
+model ModulosRol {
+  rol       Rol      @id
+  modulos   String[]
+  updatedAt DateTime @updatedAt
+}
