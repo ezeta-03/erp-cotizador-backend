@@ -475,6 +475,7 @@ model ItemAlmacen {
   movimientos   MovimientoAlmacen[]
   ordenItems    OrdenAlmacenItem[]
   solicitudes   SolicitudAlmacen[]
+  partidasPresupuesto PartidaPresupuesto[]
 
   @@index([tipo])
   @@index([categoria])
@@ -634,8 +635,64 @@ model Proyecto {
   ordenes              OrdenAlmacen[]
   movimientos          MovimientoAlmacen[]
   solicitudes          SolicitudAlmacen[]
+  presupuesto          PresupuestoProyecto?
 
   @@index([clienteId])
   @@index([estado])
   @@unique([proyectoFirestoreId])
+}
+
+// Catálogo de partidas de la hoja "Presupuesto y control de costos — BTL &
+// Producción": las filas que aparecen precargadas al abrir el presupuesto de
+// un proyecto. categoria es el código de la sección (MANO_DE_OBRA,
+// MATERIALES, PRODUCCION_GRAFICA, LOGISTICA, EQUIPOS, ADMINISTRATIVOS). Si
+// tiene itemAlmacenId, el precio sale del costoUnitario de ese ítem en vez de
+// precioUnitario — así sigue al Almacén sin mantenerlo a mano.
+model PartidaPresupuesto {
+  id             Int          @id @default(autoincrement())
+  categoria      String
+  nombre         String
+  unidad         String
+  precioUnitario Float        @default(0)
+  itemAlmacenId  Int?
+  itemAlmacen    ItemAlmacen? @relation(fields: [itemAlmacenId], references: [id], onDelete: SetNull)
+  orden          Int          @default(0)
+  activo         Boolean      @default(true)
+  createdAt      DateTime     @default(now())
+  updatedAt      DateTime     @updatedAt
+
+  @@index([categoria])
+}
+
+// Presupuesto guardado de un Proyecto (uno por proyecto). Las filas se copian
+// del catálogo al crearlo y desde ahí son propias: cambiar el catálogo no
+// altera presupuestos ya guardados.
+model PresupuestoProyecto {
+  id               Int                       @id @default(autoincrement())
+  proyectoId       Int                       @unique
+  proyecto         Proyecto                  @relation(fields: [proyectoId], references: [id], onDelete: Cascade)
+  fecha            DateTime?
+  responsable      String?
+  tipoServicio     String?
+  numeroCotizacion String?
+  // Porcentaje (45 = 45%). Precio sugerido = costo / (1 - margen/100).
+  margen           Float                     @default(45)
+  precioNegociado  Float?
+  createdAt        DateTime                  @default(now())
+  updatedAt        DateTime                  @updatedAt
+  items            PresupuestoProyectoItem[]
+}
+
+model PresupuestoProyectoItem {
+  id             Int                 @id @default(autoincrement())
+  presupuestoId  Int
+  presupuesto    PresupuestoProyecto @relation(fields: [presupuestoId], references: [id], onDelete: Cascade)
+  categoria      String
+  descripcion    String
+  unidad         String
+  cantidad       Float               @default(0)
+  precioUnitario Float               @default(0)
+  orden          Int                 @default(0)
+
+  @@index([presupuestoId])
 }
