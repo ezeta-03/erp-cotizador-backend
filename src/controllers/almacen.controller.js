@@ -5,8 +5,10 @@ const ITEM_SELECT = {
   id: true, codigo: true, nombre: true, tipo: true, empresa: true,
   categoria: true, unidad: true, ubicacion: true,
   stockMinimo: true, stockMaximo: true, stockActual: true,
-  costoUnitario: true, proveedorNombre: true, activo: true,
+  costoUnitario: true, proveedorNombre: true, observaciones: true, activo: true,
 };
+
+const TIPOS_ITEM = ["INSUMO", "PRODUCTO_TERMINADO", "HERRAMIENTA", "MAQUINARIA_EQUIPO", "MUEBLE_ENSER"];
 
 /* ── Catálogo (insumos + productos terminados) ────────────────────────────── */
 
@@ -33,13 +35,13 @@ exports.crearItem = async (req, res) => {
   try {
     const {
       codigo, nombre, tipo, empresa, categoria, unidad, ubicacion,
-      stockMinimo, stockMaximo, costoUnitario, proveedorNombre,
+      stockMinimo, stockMaximo, costoUnitario, proveedorNombre, observaciones,
     } = req.body;
 
     if (!codigo || !nombre || !tipo || !categoria || !unidad) {
       return res.status(400).json({ message: "Faltan campos requeridos: codigo, nombre, tipo, categoria, unidad" });
     }
-    if (!["INSUMO", "PRODUCTO_TERMINADO", "HERRAMIENTA", "MAQUINARIA_EQUIPO"].includes(tipo)) {
+    if (!TIPOS_ITEM.includes(tipo)) {
       return res.status(400).json({ message: "tipo inválido" });
     }
     if (empresa && !["BTL_OUTDOOR", "NETWISE"].includes(empresa)) {
@@ -55,6 +57,7 @@ exports.crearItem = async (req, res) => {
         stockMaximo: stockMaximo !== undefined ? Number(stockMaximo) : 0,
         costoUnitario: costoUnitario !== undefined ? Number(costoUnitario) : 0,
         proveedorNombre: proveedorNombre || null,
+        observaciones: observaciones || null,
       },
       select: ITEM_SELECT,
     });
@@ -71,7 +74,7 @@ exports.actualizarItem = async (req, res) => {
     const { id } = req.params;
     const {
       nombre, categoria, unidad, ubicacion,
-      stockMinimo, stockMaximo, costoUnitario, proveedorNombre, activo,
+      stockMinimo, stockMaximo, costoUnitario, proveedorNombre, observaciones, activo,
     } = req.body;
 
     const item = await prisma.itemAlmacen.update({
@@ -85,6 +88,7 @@ exports.actualizarItem = async (req, res) => {
         ...(stockMaximo !== undefined && { stockMaximo: Number(stockMaximo) }),
         ...(costoUnitario !== undefined && { costoUnitario: Number(costoUnitario) }),
         ...(proveedorNombre !== undefined && { proveedorNombre: proveedorNombre || null }),
+        ...(observaciones !== undefined && { observaciones: observaciones || null }),
         ...(activo !== undefined && { activo }),
       },
       select: ITEM_SELECT,

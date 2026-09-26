@@ -432,11 +432,12 @@ enum TipoMovimientoAlmacen {
 enum TipoItemAlmacen {
   INSUMO
   PRODUCTO_TERMINADO
-  // Solo se usan para Netwise: a diferencia de BTL/Outdoor (donde estos son
-  // activos fijos y quedan fuera del Almacén), Netwise no tiene insumos ni
-  // productos terminados propios — todo su inventario cae en estas dos.
+  // Al principio solo se usaban para Netwise (en BTL/Outdoor estos activos
+  // fijos quedaban fuera del Almacén). Desde sep-2026 entran también los de
+  // BTL/Outdoor, igual que en el Excel de inventario.
   HERRAMIENTA
   MAQUINARIA_EQUIPO
+  MUEBLE_ENSER
 }
 
 // Inventario físico real (insumos comprados + productos terminados ya armados),
@@ -469,6 +470,8 @@ model ItemAlmacen {
   // contratos de alquiler de paneles (plazo, costo mensual) y no encaja con
   // "a quién le compramos este insumo" — acá solo es un nombre de referencia.
   proveedorNombre String?
+  // Columna "Observaciones" del Excel de inventario (estado, notas).
+  observaciones String?
   activo        Boolean             @default(true)
   createdAt     DateTime            @default(now())
   updatedAt     DateTime            @updatedAt
