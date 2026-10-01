@@ -3,7 +3,7 @@ const auth = require("../middlewares/auth.middleware");
 const allowRoles = require("../middlewares/role.middleware");
 const ctrl = require("../controllers/rentabilidad.controller");
 
-router.get("/mupis", auth, allowRoles("ADMIN", "VENTAS"), ctrl.listarMupis);
-router.get("/oportunidad-perdida", auth, allowRoles("ADMIN", "VENTAS"), ctrl.oportunidadPerdida);
+router.get("/mupis", auth, allowRoles("ADMIN", "VENTAS", "CONTABLE"), ctrl.listarMupis);
+router.get("/oportunidad-perdida", auth, allowRoles("ADMIN", "VENTAS", "CONTABLE"), ctrl.oportunidadPerdida);
 
 module.exports = router;

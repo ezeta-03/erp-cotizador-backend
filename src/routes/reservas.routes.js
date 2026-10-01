@@ -3,8 +3,8 @@ const auth       = require("../middlewares/auth.middleware");
 const allowRoles = require("../middlewares/role.middleware");
 const ctrl       = require("../controllers/reservas.controller");
 
-router.get   ("/",    auth, allowRoles("ADMIN", "VENTAS"), ctrl.listar);
-router.get   ("/por-cotizacion/:cotizacionId", auth, allowRoles("ADMIN", "VENTAS"), ctrl.porCotizacion);
+router.get   ("/",    auth, allowRoles("ADMIN", "VENTAS", "CONTABLE"), ctrl.listar);
+router.get   ("/por-cotizacion/:cotizacionId", auth, allowRoles("ADMIN", "VENTAS", "CONTABLE"), ctrl.porCotizacion);
 router.post  ("/",    auth, allowRoles("ADMIN"),           ctrl.crear);
 router.put   ("/:id", auth, allowRoles("ADMIN"),           ctrl.actualizar);
 // Edición puntual del precio contratado (no toca el resto de campos de la reserva,

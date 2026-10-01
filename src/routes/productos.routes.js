@@ -44,7 +44,7 @@ router.post(
 router.get(
   "/",
   auth,
-  allowRoles("ADMIN", "VENTAS"),
+  allowRoles("ADMIN", "VENTAS", "CONTABLE"),
   productosController.listar
 );
 

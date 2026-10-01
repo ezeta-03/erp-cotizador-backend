@@ -25,7 +25,7 @@ router.get(
 router.get(
   "/historico",  // ← Esta también debe ir ANTES de /:id
   auth,
-  allowRoles("ADMIN", "VENTAS"),
+  allowRoles("ADMIN", "VENTAS", "CONTABLE"),
   controller.historicoCotizaciones
 );
 
@@ -35,7 +35,7 @@ router.get(
 router.post(
   "/",
   auth,
-  allowRoles("ADMIN", "VENTAS"),
+  allowRoles("ADMIN", "VENTAS", "CONTABLE"),
   controller.crearCotizacion
 );
 
@@ -51,7 +51,7 @@ router.get(
 router.get(
   "/:id",  // ← Esta va DESPUÉS de las rutas específicas
   auth,
-  allowRoles("ADMIN", "VENTAS", "CLIENTE"),
+  allowRoles("ADMIN", "VENTAS", "CONTABLE", "CLIENTE"),
   controller.obtenerCotizacion
 );
 
@@ -67,7 +67,7 @@ router.post(
 router.post(
   "/:id/renegociar",
   auth,
-  allowRoles("ADMIN", "VENTAS"),
+  allowRoles("ADMIN", "VENTAS", "CONTABLE"),
   controller.renegociarCotizacion
 );
 

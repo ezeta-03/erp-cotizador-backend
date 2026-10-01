@@ -3,7 +3,7 @@ const auth       = require("../middlewares/auth.middleware");
 const allowRoles = require("../middlewares/role.middleware");
 const ctrl       = require("../controllers/paneles.controller");
 
-router.get   ("/",          auth, allowRoles("ADMIN", "VENTAS"), ctrl.listar);
+router.get   ("/",          auth, allowRoles("ADMIN", "VENTAS", "CONTABLE"), ctrl.listar);
 router.get   ("/eliminados",auth, allowRoles("ADMIN"),           ctrl.listarEliminados);
 router.post  ("/",          auth, allowRoles("ADMIN"),           ctrl.crear);
 router.post  ("/importar",  auth, allowRoles("ADMIN"),           ctrl.importar);

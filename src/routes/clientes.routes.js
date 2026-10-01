@@ -4,13 +4,13 @@ const allowRoles = require("../middlewares/role.middleware");
 const clientesController = require("../controllers/clientes.controller");
 
 // Crear cliente
-router.post("/", auth, allowRoles("ADMIN", "VENTAS"), clientesController.crear);
+router.post("/", auth, allowRoles("ADMIN", "VENTAS", "CONTABLE"), clientesController.crear);
 
 // Listar clientes
-router.get("/", auth, allowRoles("ADMIN", "VENTAS"), clientesController.listar);
+router.get("/", auth, allowRoles("ADMIN", "VENTAS", "CONTABLE"), clientesController.listar);
 
 // Actualizar cliente
-router.put("/:id", auth, allowRoles("ADMIN", "VENTAS"), clientesController.actualizar);
+router.put("/:id", auth, allowRoles("ADMIN", "VENTAS", "CONTABLE"), clientesController.actualizar);
 
 // Desactivar cliente (soft-delete)
 router.delete("/:id", auth, allowRoles("ADMIN"), clientesController.eliminar);
@@ -24,7 +24,7 @@ router.post(
   // "/invitar",
 
   auth,
-  allowRoles("ADMIN", "VENTAS"),
+  allowRoles("ADMIN", "VENTAS", "CONTABLE"),
   clientesController.invitarCliente
 );
 
@@ -32,21 +32,21 @@ router.post(
 // router.get(
 //   "/actividad",
 //   auth,
-//   allowRoles("ADMIN", "VENTAS"),
+//   allowRoles("ADMIN", "VENTAS", "CONTABLE"),
 //   clientesController.actividadClientes
 // );
 
 router.get(
   "/actividad",
   auth,
-  allowRoles("ADMIN", "VENTAS"),
+  allowRoles("ADMIN", "VENTAS", "CONTABLE"),
   clientesController.getActividadClientes
 );
 
 router.get(
   "/:id/actividad",
   auth,
-  allowRoles("ADMIN", "VENTAS"),
+  allowRoles("ADMIN", "VENTAS", "CONTABLE"),
   clientesController.actividadesClientes
 );
 

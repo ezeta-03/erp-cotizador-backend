@@ -9,7 +9,7 @@ router.use(auth);
 router.get("/",          allowRoles("ADMIN", "VENTAS", "CONTABLE"), ctrl.listarProyectos);
 // Un Proyecto puede crearse en cualquier momento, a la par de las
 // cotizaciones — no depende de que exista o se apruebe una.
-router.post("/",         allowRoles("ADMIN", "VENTAS"),             ctrl.crearProyecto);
+router.post("/",         allowRoles("ADMIN", "VENTAS", "CONTABLE"),             ctrl.crearProyecto);
 // Antes de "/:id" — si no, Express interpreta "externos" como un id.
 router.get("/externos",  allowRoles("ADMIN", "VENTAS", "CONTABLE"), ctrl.listarProyectosExternos);
 // Catálogo de partidas precargadas del presupuesto — también antes de "/:id".
@@ -23,6 +23,6 @@ router.put("/:id",  allowRoles("ADMIN"), ctrl.actualizarProyecto);
 // Presupuesto y control de costos (uno por proyecto). Lo arma quien puede
 // crear proyectos; Contable solo lo consulta.
 router.get("/:id/presupuesto", allowRoles("ADMIN", "VENTAS", "CONTABLE"), presCtrl.obtenerPresupuesto);
-router.put("/:id/presupuesto", allowRoles("ADMIN", "VENTAS"),             presCtrl.guardarPresupuesto);
+router.put("/:id/presupuesto", allowRoles("ADMIN", "VENTAS", "CONTABLE"),             presCtrl.guardarPresupuesto);
 
 module.exports = router;
