@@ -1,9 +1,14 @@
 // routes/configuracion.routes.js
 const express = require("express");
-const { PrismaClient } = require("@prisma/client");
-const prisma = new PrismaClient();
+const prisma = require("../config/prisma");
+const auth = require("../middlewares/auth.middleware");
+const allowRoles = require("../middlewares/role.middleware");
 
 const router = express.Router();
+
+// Cambiar estos parámetros o recalcular reescribe el precio de todos los
+// productos: solo ADMIN autenticado.
+router.use(auth, allowRoles("ADMIN"));
 
 // GET /api/configuracion
 router.get("/", async (req, res) => {

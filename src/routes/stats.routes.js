@@ -5,8 +5,9 @@ const statsController = require("../controllers/stats.controller");
 const verifyToken = require("../middlewares/auth.middleware");
 const checkRole = require("../middlewares/role.middleware");
 
-// Todas las rutas requieren autenticación
-router.use(verifyToken);
+// Todas las rutas requieren autenticación y un rol interno: el controlador solo
+// filtra por vendedor para VENTAS, así que un CLIENTE vería los totales de la empresa.
+router.use(verifyToken, checkRole("ADMIN", "VENTAS", "CONTABLE"));
 
 // Estadísticas de cotizaciones por estado
 router.get("/cotizaciones/estados", statsController.getEstadisticasCotizaciones);
