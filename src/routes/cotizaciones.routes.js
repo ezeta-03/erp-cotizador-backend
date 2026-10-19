@@ -39,7 +39,8 @@ router.post(
   controller.crearCotizacion
 );
 
-// Listar cotizaciones (ADMIN, VENTAS)
+// Listar cotizaciones. VENTAS ve solo las suyas; CONTABLE ve todas a propósito
+// (Finanzas necesita el total para facturar).
 router.get(
   "/",
   auth,
@@ -71,11 +72,12 @@ router.post(
   controller.renegociarCotizacion
 );
 
-// VENTAS/ADMIN: facturar cotización aprobada
+// Facturar una cotización aprobada: solo ADMIN y CONTABLE (vender y facturar
+// quedan separados).
 router.post(
   "/:id/facturar",
   auth,
-  allowRoles("ADMIN", "VENTAS", "CONTABLE"),
+  allowRoles("ADMIN", "CONTABLE"),
   controller.facturarCotizacion
 );
 

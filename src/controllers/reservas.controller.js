@@ -9,7 +9,25 @@ const esExterno = (estado) => ESTADOS_EXTERNO.includes(estado);
 const INCLUDE = {
   panel:   { select: { id: true, codigo: true, nombre: true, distrito: true, tipo: true } },
   cliente: { select: { id: true, nombreComercial: true, documento: true } },
+  cotizacion: { select: { id: true, numero: true } },
 };
+
+// Una reserva propia puede quedar ligada a la cotización que la originó, para
+// que la ocupación y la rentabilidad se puedan rastrear hasta la venta.
+// Devuelve { id } (o { id: null } si no se envía) o { error }.
+async function validarCotizacion(cotizacionId, clienteId) {
+  if (cotizacionId === undefined || cotizacionId === null || cotizacionId === "") return { id: null };
+  const id = parseInt(cotizacionId);
+  const cot = Number.isFinite(id)
+    ? await prisma.cotizacion.findUnique({ where: { id }, select: { clienteId: true, estado: true } })
+    : null;
+  if (!cot) return { error: "La cotización indicada no existe" };
+  if (!["APROBADA", "FACTURADA"].includes(cot.estado))
+    return { error: "Solo se puede vincular una cotización aprobada o facturada" };
+  if (clienteId && cot.clienteId !== parseInt(clienteId))
+    return { error: "La cotización pertenece a otro cliente" };
+  return { id };
+}
 
 const nombreSolapada = (solapada) => solapada.cliente?.nombreComercial ?? "un registro externo";
 
@@ -66,6 +84,9 @@ exports.crear = async (req, res) => {
     if (!externo && (!clienteId || !precioMensual))
       return res.status(400).json({ message: "Cliente y precio son obligatorios" });
 
+    const cot = externo ? { id: null } : await validarCotizacion(cotizacionId, clienteId);
+    if (cot.error) return res.status(400).json({ message: cot.error });
+
     const panel = await prisma.panel.findUnique({ where: { id: parseInt(panelId) } });
     if (!panel || !panel.activo) {
       return res.status(400).json({ message: "El panel/mupi no existe o está desactivado" });
@@ -96,7 +117,7 @@ exports.crear = async (req, res) => {
       data: {
         panelId:       parseInt(panelId),
         clienteId:     externo ? null : parseInt(clienteId),
-        cotizacionId:  cotizacionId ? parseInt(cotizacionId) : null,
+        cotizacionId:  cot.id,
         fechaInicio:   nuevaInicio,
         fechaFin:      nuevaFin,
         precioMensual: externo ? null : parseFloat(precioMensual),
@@ -121,7 +142,7 @@ exports.crear = async (req, res) => {
 exports.actualizar = async (req, res) => {
   try {
     const id = parseInt(req.params.id);
-    const { clienteId, fechaInicio, fechaFin, precioMensual, estado, notas } = req.body;
+    const { clienteId, fechaInicio, fechaFin, precioMensual, estado, notas, cotizacionId } = req.body;
 
     const actual = await prisma.reserva.findUnique({ where: { id } });
     if (!actual) return res.status(404).json({ message: "Reserva no encontrada" });
@@ -139,6 +160,15 @@ exports.actualizar = async (req, res) => {
       return res.status(400).json({ message: "Cliente es obligatorio para una reserva propia" });
     if (!externo && !(precioMensual || actual.precioMensual))
       return res.status(400).json({ message: "Precio es obligatorio para una reserva propia" });
+
+    // cotizacionId sin enviar = se mantiene; vacío = se desvincula.
+    let cotizacionFinal;
+    if (externo) cotizacionFinal = null;
+    else if (cotizacionId !== undefined) {
+      const cot = await validarCotizacion(cotizacionId, clienteId || actual.clienteId);
+      if (cot.error) return res.status(400).json({ message: cot.error });
+      cotizacionFinal = cot.id;
+    }
 
     if (fechaInicio || fechaFin) {
       const solapada = await prisma.reserva.findFirst({
@@ -167,6 +197,7 @@ exports.actualizar = async (req, res) => {
         precioMensual: externo ? null : (precioMensual ? parseFloat(precioMensual) : undefined),
         estado:        estadoFinal,
         notas:         notas ?? null,
+        cotizacionId:  cotizacionFinal,
       },
       include: INCLUDE,
     });

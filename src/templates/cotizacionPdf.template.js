@@ -1,3 +1,5 @@
+const { IGV_RATE } = require("../config/negocio");
+
 module.exports = (cotizacion) => {
   const { cliente, items, total, numero, createdAt, estado, conIgv: rawConIgv } = cotizacion;
 
@@ -9,7 +11,7 @@ module.exports = (cotizacion) => {
 
   const S = (v) => `S/ ${(v || 0).toFixed(2)}`;
 
-  const valorVenta = conIgv ? parseFloat((( total || 0) / 1.18).toFixed(2)) : (total || 0);
+  const valorVenta = conIgv ? parseFloat((( total || 0) / (1 + IGV_RATE)).toFixed(2)) : (total || 0);
   const igvMonto   = conIgv ? parseFloat(((total || 0) - valorVenta).toFixed(2)) : 0;
 
   const itemsHtml = items && items.length > 0

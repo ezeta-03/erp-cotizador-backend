@@ -3,6 +3,7 @@ const puppeteer = require("puppeteer");
 const cotizacionTemplate = require("../templates/cotizacionPdf.template");
 const { generarGlosa } = require("../utils/glosa");
 const { crearProyectoDesdeCotizacion } = require("../services/proyectoBridge");
+const { IGV_RATE, MARGEN_MINIMO } = require("../config/negocio");
 const { crearDesdeCotizacion: crearProyectoInterno } = require("./proyectos.controller");
 
 const registrarLog = (client, { cotizacionId, usuarioId, estadoAnterior, estadoNuevo, comentario }) =>
@@ -15,6 +16,19 @@ const registrarLog = (client, { cotizacionId, usuarioId, estadoAnterior, estadoN
       comentario: comentario || null,
     },
   });
+
+// Siguiente número del vendedor en el año en curso: COT-{vendedor}-{año}-{n}.
+// Toma el mayor n existente (no un conteo), así no se repite aunque haya
+// huecos o cotizaciones de años anteriores.
+async function siguienteNumero(vendedorId) {
+  const prefijo = `COT-${vendedorId}-${new Date().getFullYear()}-`;
+  const previas = await prisma.cotizacion.findMany({
+    where: { numero: { startsWith: prefijo } },
+    select: { numero: true },
+  });
+  const mayor = previas.reduce((m, c) => Math.max(m, parseInt(c.numero.slice(prefijo.length), 10) || 0), 0);
+  return `${prefijo}${mayor + 1}`;
+}
 
 const clamp = (v, min = 0.01) => {
   const n = Number(v);
@@ -96,7 +110,6 @@ exports.crearCotizacion = async (req, res) => {
       return res.status(400).json({ message: "La cotización debe tener al menos un item" });
     }
 
-    const MARGEN_MINIMO = 30;
     const margen = margenInput !== undefined ? Number(margenInput) : MARGEN_MINIMO;
     let solicitudUsada = null;
 
@@ -128,11 +141,7 @@ exports.crearCotizacion = async (req, res) => {
       return res.status(400).json({ message: err.message });
     }
 
-    const vendedor = await prisma.usuario.findUnique({ where: { id: usuarioIdInt } });
-    const secuencia = (await prisma.cotizacion.count({ where: { usuarioId: usuarioIdInt } })) + 1;
-    const numero = `COT-${vendedor.id}-${new Date().getFullYear()}-${secuencia}`;
-
-    const cotizacion = await prisma.cotizacion.create({
+    const crear = (numero) => prisma.cotizacion.create({
       data: {
         clienteId: clienteIdInt,
         usuarioId: usuarioIdInt,
@@ -183,7 +192,18 @@ exports.crearCotizacion = async (req, res) => {
       },
     });
 
-    const IGV_RATE = 0.18;
+    // numero es @unique: si otra cotización del mismo vendedor se creó a la vez
+    // y tomó el mismo número, se recalcula y se reintenta.
+    let cotizacion;
+    for (let intento = 1; ; intento++) {
+      try {
+        cotizacion = await crear(await siguienteNumero(usuarioIdInt));
+        break;
+      } catch (err) {
+        if (err.code !== "P2002" || intento >= 3) throw err;
+      }
+    }
+
     const valorVenta = cotizacion.items.reduce((acc, item) => acc + item.subtotal, 0);
     const total = parseFloat((conIgv ? valorVenta * (1 + IGV_RATE) : valorVenta).toFixed(2));
 
@@ -500,7 +520,6 @@ exports.renegociarCotizacion = async (req, res) => {
       return res.status(400).json({ message: "La cotización debe tener al menos un item" });
     }
 
-    const MARGEN_MINIMO = 30;
     const margen = margenInput !== undefined ? Number(margenInput) : MARGEN_MINIMO;
     let solicitudUsada = null;
 
@@ -523,7 +542,6 @@ exports.renegociarCotizacion = async (req, res) => {
       solicitudUsada = solicitud;
     }
 
-    const IGV_RATE = 0.18;
 
     const updated = await prisma.$transaction(async (tx) => {
       const existingItems = await tx.cotizacionItem.findMany({

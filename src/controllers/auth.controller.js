@@ -6,6 +6,9 @@ const prisma = require("../config/prisma");
 exports.login = async (req, res) => {
   try {
     const { email, password } = req.body;
+    if (typeof email !== "string" || !email.trim() || typeof password !== "string" || !password) {
+      return res.status(400).json({ message: "Ingresa tu email y contraseña" });
+    }
 
     const user = await prisma.usuario.findUnique({
       where: { email },

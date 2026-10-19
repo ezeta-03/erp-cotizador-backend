@@ -1,5 +1,5 @@
-const { PrismaClient } = require("@prisma/client");
-const prisma = new PrismaClient();
+const prisma = require("../config/prisma");
+const { IGV_RATE } = require("../config/negocio");
 
 const MESES = [
   "ENERO","FEBRERO","MARZO","ABRIL","MAYO","JUNIO",
@@ -31,7 +31,7 @@ const totalMesesEntre = (inicio, fin) => {
 const generarCuotas = (inicio, fin, costoMensual) => {
   const cuotas  = [];
   const start   = new Date(inicio);
-  const igvRate = 0.18;
+  const igvRate = IGV_RATE;
   const diaInicio = start.getUTCDate();
   const totalMeses = totalMesesEntre(inicio, fin);
 
@@ -247,7 +247,7 @@ exports.actualizar = async (req, res) => {
     const newInicio  = new Date(inicio);
     const newFin     = new Date(fin);
     const newCosto   = Number(costoMensual);
-    const igvRate    = 0.18;
+    const igvRate    = IGV_RATE;
 
     // Leer valores anteriores para detectar cambios
     const anterior = await prisma.proveedor.findUnique({
