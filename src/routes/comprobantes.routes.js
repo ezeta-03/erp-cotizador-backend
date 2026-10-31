@@ -2,6 +2,9 @@ const router = require("express").Router();
 const auth = require("../middlewares/auth.middleware");
 const allowRoles = require("../middlewares/role.middleware");
 const controller = require("../controllers/comprobantes.controller");
+const multer = require("multer");
+
+const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 5 * 1024 * 1024 } });
 
 // Facturación electrónica: emiten y consultan ADMIN y CONTABLE (igual que "Facturar").
 const roles = allowRoles("ADMIN", "CONTABLE");
@@ -15,6 +18,11 @@ router.get("/opciones", auth, roles, controller.opciones);
 router.get("/tipo-cambio", auth, roles, controller.tipoCambio);
 // Formulario prellenado para convertir una cotización en comprobante
 router.get("/cotizacion/:id/borrador", auth, roles, controller.borradorDesdeCotizacion);
+// Comprobantes emitidos fuera del ERP (portal SOL), solo para cobrarlos
+router.post("/externos", auth, roles, controller.registrarExterno);
+router.get("/externos/plantilla", auth, roles, controller.plantillaExternos);
+router.post("/externos/importar", auth, roles, upload.single("archivo"), controller.importarExternos);
+router.delete("/externos/:id", auth, roles, controller.eliminarExterno);
 router.get("/:id", auth, roles, controller.obtener);
 // Cobros (cuentas por cobrar)
 router.get("/:id/pagos", auth, roles, controller.listarPagos);

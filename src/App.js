@@ -47,6 +47,8 @@ const almacenRoutes           = require("./routes/almacen.routes");
 const proyectosRoutes         = require("./routes/proyectos.routes");
 const modulosRolRoutes        = require("./routes/modulosRol.routes");
 const comprobantesRoutes      = require("./routes/comprobantes.routes");
+const cuentasPorCobrarRoutes  = require("./routes/cuentasPorCobrar.routes");
+const cuentasPorPagarRoutes   = require("./routes/cuentasPorPagar.routes");
 
 // app.use(cors());
 app.use(express.json());
@@ -71,6 +73,8 @@ app.use("/api/almacen",           almacenRoutes);
 app.use("/api/proyectos",         proyectosRoutes);
 app.use("/api/modulos-rol",       modulosRolRoutes);
 app.use("/api/comprobantes",      comprobantesRoutes);
+app.use("/api/cuentas-por-cobrar", cuentasPorCobrarRoutes);
+app.use("/api/cuentas-por-pagar", cuentasPorPagarRoutes);
 
 // Health check endpoint
 app.get("/api/health", async (req, res) => {

@@ -342,6 +342,24 @@ exports.actualizar = async (req, res) => {
   }
 };
 
+// El contrato queda CANCELADO cuando todas sus cuotas lo están (salvo que
+// esté suspendido a mano). También lo usa Cuentas por pagar al pagar una cuota.
+async function sincronizarEstadoContrato(proveedorId) {
+  const [todasCuotas, prov] = await Promise.all([
+    prisma.proveedorCuota.findMany({ where: { proveedorId } }),
+    prisma.proveedor.findUnique({ where: { id: proveedorId }, select: { estadoOverride: true } }),
+  ]);
+  // No sobreescribir si el contrato está suspendido manualmente
+  if (prov.estadoOverride !== "SUSPENDIDO") {
+    const allCanceladas = todasCuotas.length > 0 && todasCuotas.every(c => c.estado === "CANCELADO");
+    await prisma.proveedor.update({
+      where: { id: proveedorId },
+      data: { estadoOverride: allCanceladas ? "CANCELADO" : null },
+    });
+  }
+}
+exports.sincronizarEstadoContrato = sincronizarEstadoContrato;
+
 /* ── ACTUALIZAR CUOTA ── */
 exports.actualizarCuota = async (req, res) => {
   try {
@@ -359,20 +377,7 @@ exports.actualizarCuota = async (req, res) => {
     });
 
     // Auto-sync estadoOverride del contrato cuando cambia el estado de una cuota
-    if (estado !== undefined) {
-      const [todasCuotas, prov] = await Promise.all([
-        prisma.proveedorCuota.findMany({ where: { proveedorId: cuota.proveedorId } }),
-        prisma.proveedor.findUnique({ where: { id: cuota.proveedorId }, select: { estadoOverride: true } }),
-      ]);
-      // No sobreescribir si el contrato está suspendido manualmente
-      if (prov.estadoOverride !== "SUSPENDIDO") {
-        const allCanceladas = todasCuotas.length > 0 && todasCuotas.every(c => c.estado === "CANCELADO");
-        await prisma.proveedor.update({
-          where: { id: cuota.proveedorId },
-          data: { estadoOverride: allCanceladas ? "CANCELADO" : null },
-        });
-      }
-    }
+    if (estado !== undefined) await sincronizarEstadoContrato(cuota.proveedorId);
 
     res.json(cuota);
   } catch (e) {

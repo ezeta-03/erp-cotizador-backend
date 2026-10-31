@@ -76,7 +76,9 @@ exports.obtenerProyecto = async (req, res) => {
     });
     if (!proyecto) return res.status(404).json({ message: "Proyecto no encontrado" });
 
-    res.json({ ...proyecto, asignado: await calcularAsignado(id) });
+    // Gasto real: facturas de proveedores vinculadas al proyecto (Cuentas por pagar).
+    const { gastoDeProyecto } = require("./cuentasPorPagar.controller");
+    res.json({ ...proyecto, asignado: await calcularAsignado(id), gastoProveedores: await gastoDeProyecto(id) });
   } catch (error) {
     console.error("❌ Error al obtener proyecto:", error);
     res.status(500).json({ message: "Error al obtener proyecto" });

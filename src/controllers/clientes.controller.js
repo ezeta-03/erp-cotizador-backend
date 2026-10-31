@@ -2,11 +2,13 @@ const prisma = require("../config/prisma");
 const crypto = require("crypto");
 const bcrypt = require("bcryptjs");
 const { sendActivationEmail } = require("../services/mail.service");
+const { leerCondicion } = require("../utils/condicionPago");
 // const db = require("../models"); // ajusta según tu ORM/estructura
 // Crear cliente
 exports.crear = async (req, res) => {
   try {
     console.log("📦 BODY RECIBIDO:", req.body);
+    const condicion = leerCondicion(req.body);
 
     const cliente = await prisma.cliente.create({
       data: {
@@ -16,11 +18,13 @@ exports.crear = async (req, res) => {
         telefono: req.body.telefono,
         email: req.body.email,
         direccion: req.body.direccion,
+        ...condicion,
       },
     });
 
     res.json(cliente);
   } catch (error) {
+    if (error.status === 400) return res.status(400).json({ message: error.message });
     console.error("❌ Prisma error:", error);
     res.status(500).json({
       message: "Error al crear cliente",
@@ -72,6 +76,7 @@ exports.actualizar = async (req, res) => {
       email,
       direccion,
     } = req.body;
+    const condicion = leerCondicion(req.body);
 
     const cliente = await prisma.cliente.update({
       where: { id: clienteId },
@@ -82,6 +87,7 @@ exports.actualizar = async (req, res) => {
         ...(telefono !== undefined && { telefono }),
         ...(email !== undefined && { email }),
         ...(direccion !== undefined && { direccion }),
+        ...condicion,
       },
     });
 
@@ -95,6 +101,7 @@ exports.actualizar = async (req, res) => {
 
     res.json(cliente);
   } catch (error) {
+    if (error.status === 400) return res.status(400).json({ message: error.message });
     console.error("❌ Prisma error:", error);
     res.status(500).json({
       message: "Error al actualizar cliente",

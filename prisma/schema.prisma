@@ -45,6 +45,8 @@ model Usuario {
   solicitudesAlmacenResueltas SolicitudAlmacen[]
   comprobantes             Comprobante[]
   pagosComprobante         PagoComprobante[]
+  cuentasPorPagar          CuentaPorPagar[]
+  pagosCuentaPorPagar      PagoCuentaPorPagar[]
 }
 
 // Acomodo personal del panel de bienvenida (bento): qué bloques tiene cada
@@ -74,6 +76,10 @@ model Cliente {
   email           String?
   direccion       String?
   activo          Boolean      @default(true)
+  // Condición de pago por defecto: CONTADO, o CREDITO a diasCredito días.
+  // La cotización la hereda (y puede cambiarla) y la factura la trae precargada.
+  condicionPago   String       @default("CONTADO")
+  diasCredito     Int?
   createdAt       DateTime     @default(now())
   usuarioId       Int?         @unique
   usuario         Usuario?     @relation(fields: [usuarioId], references: [id])
@@ -129,6 +135,9 @@ model Cotizacion {
   respondidaAt        DateTime?
   respuestaComentario String?
   facturadaAt         DateTime?
+  // Condición de pago pactada (copiada del cliente al crearla, editable).
+  condicionPago       String           @default("CONTADO")
+  diasCredito         Int?
   proyectoExternoId    String?
   proyectoExternoError String?
   clienteId           Int
@@ -375,6 +384,10 @@ model ProveedorCuota {
   fechaCobro  DateTime?
   estado      EstadoCuota @default(PENDIENTE)
   detalle     String?
+  // Pago registrado desde Cuentas por pagar (al cancelar la cuota).
+  fechaPago       DateTime?
+  medioPago       String?
+  numeroOperacion String?
   proveedor   Proveedor   @relation(fields: [proveedorId], references: [id])
 
   @@index([proveedorId])
@@ -545,6 +558,7 @@ model OrdenAlmacen {
   createdAt         DateTime              @default(now())
   items             OrdenAlmacenItem[]
   movimientos       MovimientoAlmacen[]
+  cuentasPorPagar   CuentaPorPagar[]
 
   @@index([tipo])
   @@index([fecha])
@@ -592,6 +606,7 @@ model MovimientoAlmacen {
   ordenId           Int?
   orden             OrdenAlmacen?          @relation(fields: [ordenId], references: [id])
   solicitud         SolicitudAlmacen?
+  cuentasPorPagar   CuentaPorPagar[]
 
   @@index([itemAlmacenId])
   @@index([tipo])
@@ -643,6 +658,7 @@ model Proyecto {
   movimientos          MovimientoAlmacen[]
   solicitudes          SolicitudAlmacen[]
   presupuesto          PresupuestoProyecto?
+  cuentasPorPagar      CuentaPorPagar[]
 
   @@index([clienteId])
   @@index([estado])
@@ -772,6 +788,11 @@ model Comprobante {
   detraccionCuenta     String?
   // El cliente es agente de retención (retiene 3% en facturas sin detracción > S/ 700)
   agenteRetencion   Boolean           @default(false)
+  // ERP: emitido por el PSE. EXTERNO: emitido fuera del ERP (portal SOL) y
+  // registrado solo para cobrarlo; no tiene XML/CDR ni se envía a SUNAT.
+  origen            String            @default("ERP")
+  // Último recordatorio de pago enviado al cliente (Cuentas por cobrar)
+  recordatorioEnviadoAt DateTime?
   // Último envío por correo al cliente
   correoEnviadoA    String?
   correoEnviadoAt   DateTime?
@@ -798,6 +819,7 @@ model Comprobante {
   @@unique([serie, correlativo])
   @@index([cotizacionId])
   @@index([estado])
+  @@index([clienteId])
 }
 
 model ComprobanteItem {
@@ -833,4 +855,91 @@ model PagoComprobante {
   createdAt        DateTime    @default(now())
 
   @@index([comprobanteId])
+}
+
+// ── Cuentas por pagar ─────────────────────────────────────────────────────
+// Proveedores de compras y servicios (imprenta, materiales, transporte…).
+// Distinto de Proveedor, que son los arrendadores de paneles con contrato y
+// cuotas mensuales; esas cuotas también se muestran en Cuentas por pagar.
+model ProveedorCompra {
+  id              Int              @id @default(autoincrement())
+  ruc             String           @unique // RUC (11) o DNI (8) para recibos por honorarios
+  razonSocial     String
+  nombreComercial String?
+  direccion       String?
+  contacto        String?
+  telefono        String?
+  email           String?
+  banco           String?
+  numeroCuenta    String?
+  cci             String?
+  // Condición de pago por defecto al registrar sus facturas
+  condicionPago   String           @default("CONTADO")
+  diasCredito     Int?
+  activo          Boolean          @default(true)
+  createdAt       DateTime         @default(now())
+  updatedAt       DateTime         @updatedAt
+  cuentas         CuentaPorPagar[]
+}
+
+// Documento recibido de un proveedor (factura, recibo por honorarios, boleta…)
+// que hay que pagar. Se vincula opcionalmente a una entrada de almacén (orden o
+// movimiento suelto) y/o a un proyecto: así el gasto real del proyecto sale de
+// las facturas de sus proveedores.
+model CuentaPorPagar {
+  id                Int                  @id @default(autoincrement())
+  proveedorId       Int
+  proveedor         ProveedorCompra      @relation(fields: [proveedorId], references: [id])
+  tipoDocumento     String               @default("FACTURA") // FACTURA | RECIBO_HONORARIOS | BOLETA | NOTA_DEBITO | OTRO
+  serie             String
+  numero            String
+  fechaEmision      DateTime
+  moneda            String               @default("PEN")
+  tipoCambio        Float?
+  valorVenta        Float // base sin IGV
+  igv               Float
+  total             Float
+  // Detracción que la empresa deposita en la cuenta del proveedor en el Banco
+  // de la Nación (en soles) y retención (p. ej. 8% de 4ta categoría en RH).
+  detraccionMonto   Float?
+  retencionMonto    Float?
+  categoria         String               @default("COMPRA") // COMPRA | SERVICIO | GASTO_PROYECTO | OTRO
+  descripcion       String?
+  formaPago         String               @default("CONTADO")
+  cuotas            Json? // [{ monto, fechaVencimiento }] en crédito; contado vence en la emisión
+  proyectoId        Int?
+  proyecto          Proyecto?            @relation(fields: [proyectoId], references: [id])
+  ordenAlmacenId    Int?
+  ordenAlmacen      OrdenAlmacen?        @relation(fields: [ordenAlmacenId], references: [id])
+  movimientoAlmacenId Int?
+  movimientoAlmacen MovimientoAlmacen?   @relation(fields: [movimientoAlmacenId], references: [id])
+  anulado           Boolean              @default(false)
+  usuarioId         Int
+  usuario           Usuario              @relation(fields: [usuarioId], references: [id])
+  pagos             PagoCuentaPorPagar[]
+  createdAt         DateTime             @default(now())
+  updatedAt         DateTime             @updatedAt
+
+  @@unique([proveedorId, tipoDocumento, serie, numero])
+  @@index([proyectoId])
+  @@index([fechaEmision])
+}
+
+// PAGO: lo que se transfiere al proveedor (neto = total − detracción − retención).
+// DETRACCION: depósito en su cuenta del Banco de la Nación (soles).
+model PagoCuentaPorPagar {
+  id              Int            @id @default(autoincrement())
+  cuentaId        Int
+  cuenta          CuentaPorPagar @relation(fields: [cuentaId], references: [id], onDelete: Cascade)
+  tipo            String         @default("PAGO") // PAGO | DETRACCION
+  fecha           DateTime
+  monto           Float
+  medio           String
+  numeroOperacion String?
+  nota            String?
+  usuarioId       Int
+  usuario         Usuario        @relation(fields: [usuarioId], references: [id])
+  createdAt       DateTime       @default(now())
+
+  @@index([cuentaId])
 }

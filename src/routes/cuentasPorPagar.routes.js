@@ -1,0 +1,27 @@
+const router = require("express").Router();
+const auth = require("../middlewares/auth.middleware");
+const allowRoles = require("../middlewares/role.middleware");
+const controller = require("../controllers/cuentasPorPagar.controller");
+
+// Cuentas por pagar: solo ADMIN y CONTABLE.
+const roles = allowRoles("ADMIN", "CONTABLE");
+
+router.get("/", auth, roles, controller.resumen);
+router.get("/opciones", auth, roles, controller.opciones);
+// Proveedores de compras y servicios (no los arrendadores de paneles)
+router.get("/proveedores", auth, roles, controller.listarProveedores);
+router.post("/proveedores", auth, roles, controller.crearProveedor);
+router.put("/proveedores/:id", auth, roles, controller.actualizarProveedor);
+// Documentos por pagar y sus pagos
+router.get("/documentos", auth, roles, controller.listarDocumentos);
+router.post("/documentos", auth, roles, controller.crearDocumento);
+router.get("/documentos/:id", auth, roles, controller.obtenerDocumento);
+router.put("/documentos/:id", auth, roles, controller.actualizarDocumento);
+router.post("/documentos/:id/anular", auth, roles, controller.anularDocumento);
+router.post("/documentos/:id/pagos", auth, roles, controller.registrarPago);
+router.delete("/documentos/:id/pagos/:pagoId", auth, roles, controller.eliminarPago);
+// Cuotas de alquiler de paneles
+router.post("/cuotas-paneles/:id/pagar", auth, roles, controller.pagarCuotaPanel);
+router.post("/cuotas-paneles/:id/revertir", auth, roles, controller.revertirCuotaPanel);
+
+module.exports = router;

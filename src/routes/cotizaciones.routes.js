@@ -72,6 +72,14 @@ router.post(
   controller.renegociarCotizacion
 );
 
+// Condición de pago (contado / crédito a N días) mientras no esté facturada
+router.patch(
+  "/:id/condicion-pago",
+  auth,
+  allowRoles("ADMIN", "VENTAS", "CONTABLE"),
+  controller.actualizarCondicionPago
+);
+
 // Facturar una cotización aprobada: solo ADMIN y CONTABLE (vender y facturar
 // quedan separados).
 router.post(

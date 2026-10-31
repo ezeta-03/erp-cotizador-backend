@@ -45,6 +45,7 @@ const SELECT_RESUMEN = {
   hash: true, cotizacionId: true, referenciaId: true, motivoCodigo: true, createdAt: true,
   formaPago: true, cuotas: true, detraccionMonto: true, detraccionPorcentaje: true, validacionSunat: true, validadoAt: true,
   tipoCambio: true, agenteRetencion: true, motivoDescripcion: true, correoEnviadoA: true, correoEnviadoAt: true,
+  origen: true, recordatorioEnviadoAt: true, clienteId: true, observacion: true,
 };
 
 // Notas aceptadas que modifican un comprobante (para su estado de cobro).
@@ -365,6 +366,8 @@ exports.borradorDesdeCotizacion = async (req, res) => {
     res.json({
       agenteRetencion: retencion?.esAgente ?? null,
       cotizacion: { id: cot.id, numero: cot.numero, total: cot.total, conIgv: cot.conIgv },
+      // Condición de pago pactada en la cotización (precarga contado/crédito)
+      condicion: { condicionPago: cot.condicionPago, diasCredito: cot.diasCredito },
       tipoSugerido: doc?.tipo === "6" ? "FACTURA" : "BOLETA",
       puedeFactura: doc?.tipo === "6",
       cliente: { numDoc: cot.cliente.documento, nombre: cot.cliente.nombreComercial, direccion: cot.cliente.direccion || "" },
@@ -469,11 +472,15 @@ exports.tipoCambio = async (req, res) => {
 exports.consultarDocumento = async (req, res) => {
   const doc = String(req.params.documento || "").trim();
   try {
+    // Si ya es cliente del ERP se devuelve su condición de pago por defecto.
+    const condicion = await prisma.cliente.findUnique({
+      where: { documento: doc }, select: { condicionPago: true, diasCredito: true },
+    });
     if (/^\d{11}$/.test(doc)) {
       const [ruc, retencion] = await Promise.all([migo.consultarRuc(doc), migo.consultarAgenteRetencion(doc)]);
-      return res.json({ ...ruc, agenteRetencion: retencion?.esAgente ?? null });
+      return res.json({ ...ruc, agenteRetencion: retencion?.esAgente ?? null, condicion });
     }
-    if (/^\d{8}$/.test(doc)) return res.json(await migo.consultarDni(doc));
+    if (/^\d{8}$/.test(doc)) return res.json({ ...(await migo.consultarDni(doc)), condicion });
     res.status(400).json({ message: "Ingresa un RUC de 11 dígitos o un DNI de 8" });
   } catch (error) {
     responderError(res, error, "consultando documento");
@@ -535,6 +542,9 @@ exports.emitirNota = (tipoNota) => async (req, res) => {
     if (!ref) throw new ErrorValidacion("Comprobante no encontrado", 404);
     if (!["FACTURA", "BOLETA"].includes(ref.tipo)) throw new ErrorValidacion(`Solo se emite ${nombreNota} sobre facturas o boletas`);
     if (ref.estado !== "ACEPTADO") throw new ErrorValidacion("El comprobante debe estar aceptado por SUNAT");
+    if (ref.origen === "EXTERNO") {
+      throw new ErrorValidacion(`${numeroDocumento(ref.serie, ref.correlativo)} se emitió fuera del ERP: emite la ${nombreNota} en el portal SOL`);
+    }
     if (ref.notasCredito.some((n) => esNotaTotal(n.tipo, n.motivoCodigo))) {
       throw new ErrorValidacion("El comprobante ya está anulado con una nota de crédito", 409);
     }
@@ -782,6 +792,7 @@ exports.pdf = async (req, res) => {
       include: { items: true, referencia: true },
     });
     if (!c) return res.status(404).json({ message: "Comprobante no encontrado" });
+    if (c.origen === "EXTERNO") throw new ErrorValidacion("El PDF de un comprobante emitido fuera del ERP se descarga del portal SOL");
     const pdf = await generarPdf(c);
     res.set({
       "Content-Type": "application/pdf",
@@ -802,6 +813,7 @@ exports.enviarCorreo = async (req, res) => {
     });
     if (!c) throw new ErrorValidacion("Comprobante no encontrado", 404);
     if (c.estado !== "ACEPTADO") throw new ErrorValidacion("Solo se envían comprobantes aceptados por SUNAT");
+    if (c.origen === "EXTERNO") throw new ErrorValidacion("Un comprobante emitido fuera del ERP se envía desde el portal SOL");
 
     const para = String(req.body.para || c.cliente?.email || "").split(/[;,]/).map((x) => x.trim()).filter(Boolean);
     if (para.length === 0) throw new ErrorValidacion("Indica el correo del cliente");
@@ -827,5 +839,245 @@ exports.enviarCorreo = async (req, res) => {
     res.json(conNumero(actualizado));
   } catch (error) {
     responderError(res, error, "enviando comprobante por correo");
+  }
+};
+
+/* =========================
+   COMPROBANTES EMITIDOS FUERA DEL ERP (portal SOL)
+   Se registran solo para cobrarlos: no se envían a SUNAT, no tienen XML/CDR
+   y quedan como ACEPTADO con origen EXTERNO.
+========================= */
+const XLSX = require("xlsx");
+
+const SERIES_ERP = new Set(Object.values(series));
+
+// Fecha aaaa-mm-dd desde "dd/mm/aaaa", "aaaa-mm-dd" o una fecha de Excel.
+function leerFecha(valor) {
+  if (valor instanceof Date && !isNaN(valor)) return valor.toISOString().slice(0, 10);
+  if (typeof valor === "number") return XLSX.SSF.format("yyyy-mm-dd", valor);
+  const t = String(valor ?? "").trim();
+  let m = t.match(/^(\d{1,2})[/-](\d{1,2})[/-](\d{4})$/);
+  if (m) return `${m[3]}-${m[2].padStart(2, "0")}-${m[1].padStart(2, "0")}`;
+  m = t.match(/^(\d{4})-(\d{2})-(\d{2})/);
+  return m ? `${m[1]}-${m[2]}-${m[3]}` : null;
+}
+
+// Valida un comprobante externo y devuelve { datos, cobrado, numero } listo para crear.
+// body: { tipo, serie, correlativo, fechaEmision, cliente: { numDoc, nombre, direccion? }, moneda, tipoCambio?,
+//         total, detraccionPorcentaje?, agenteRetencion?, formaPago, cuotas? | diasCredito? | fechaVencimiento?,
+//         cobrado?, observacion? }
+async function prepararExterno(body) {
+  const tipo = String(body.tipo || "FACTURA").toUpperCase();
+  if (!["FACTURA", "BOLETA"].includes(tipo)) throw new ErrorValidacion("tipo debe ser FACTURA o BOLETA");
+  const serie = String(body.serie || "").trim().toUpperCase();
+  if (!/^[A-Z0-9]{4}$/.test(serie)) throw new ErrorValidacion("La serie debe tener 4 caracteres (ej. E001)");
+  if (SERIES_ERP.has(serie)) throw new ErrorValidacion(`La serie ${serie} la usa el ERP: no se registra como externa`);
+  const correlativo = Number(body.correlativo);
+  if (!Number.isInteger(correlativo) || correlativo < 1 || correlativo > 99999999) {
+    throw new ErrorValidacion("El número del comprobante debe ser un entero entre 1 y 99999999");
+  }
+  const fecha = leerFecha(body.fechaEmision);
+  if (!fecha || fecha > hoyLima()) throw new ErrorValidacion("Indica una fecha de emisión válida (no futura)");
+
+  const moneda = String(body.moneda || "PEN").toUpperCase();
+  if (!MONEDAS.includes(moneda)) throw new ErrorValidacion("moneda debe ser PEN o USD");
+  const total = r2(Number(body.total));
+  if (!(total > 0)) throw new ErrorValidacion("El total debe ser mayor a 0");
+  const tipoCambio = moneda === "USD"
+    ? Number(body.tipoCambio) || (await migo.tipoCambioVenta(fecha)).venta
+    : null;
+
+  const doc = documentoCliente(body.cliente?.numDoc);
+  if (tipo === "FACTURA" && doc?.tipo !== "6") throw new ErrorValidacion("La factura requiere el RUC del cliente");
+  const nombre = String(body.cliente?.nombre || "").trim();
+  if (!nombre) throw new ErrorValidacion("Falta el nombre o razón social del cliente");
+
+  const valorVenta = r2(total / (1 + IGV_RATE));
+  const pct = Number(body.detraccionPorcentaje) || 0;
+  if (pct < 0 || pct > 100) throw new ErrorValidacion("El % de detracción no es válido");
+  const enSoles = moneda === "PEN" ? total : r2(total * tipoCambio);
+  const detraccionMonto = pct > 0 ? r2(enSoles * pct / 100) : null;
+  const neto = r2(total - (pct > 0 ? r2(total * pct / 100) : 0));
+
+  // Crédito: cuotas explícitas o una sola a N días; las fechas pueden ser pasadas.
+  const formaPago = tipo === "FACTURA" && String(body.formaPago || "").toUpperCase() === "CREDITO" ? "CREDITO" : "CONTADO";
+  let cuotas = null;
+  if (formaPago === "CREDITO") {
+    const lista = Array.isArray(body.cuotas) && body.cuotas.length
+      ? body.cuotas
+      : [{ monto: neto, fechaVencimiento: leerFecha(body.fechaVencimiento) || sumarDias(fecha, Number(body.diasCredito) || 30) }];
+    cuotas = lista.map((q, i) => {
+      const monto = r2(Number(q.monto));
+      const venc = leerFecha(q.fechaVencimiento);
+      if (!(monto > 0)) throw new ErrorValidacion(`Cuota ${i + 1}: el monto debe ser mayor a 0`);
+      if (!venc || venc < fecha) throw new ErrorValidacion(`Cuota ${i + 1}: el vencimiento debe ser igual o posterior a la emisión`);
+      return { monto, fechaVencimiento: venc };
+    });
+    const suma = r2(cuotas.reduce((a, q) => a + q.monto, 0));
+    if (Math.abs(suma - neto) > TOLERANCIA) {
+      throw new ErrorValidacion(`Las cuotas suman ${simbolo(moneda)} ${suma.toFixed(2)} y deben sumar el neto ${simbolo(moneda)} ${neto.toFixed(2)}`);
+    }
+  }
+
+  const cobrado = r2(Number(body.cobrado) || 0);
+  if (cobrado < 0 || cobrado > neto + TOLERANCIA) {
+    throw new ErrorValidacion(`Lo cobrado no puede superar el neto ${simbolo(moneda)} ${neto.toFixed(2)}`);
+  }
+
+  const numero = numeroDocumento(serie, correlativo);
+  const igv = r2(total - valorVenta);
+  const datos = {
+    tipo, serie, correlativo, origen: "EXTERNO", estado: "ACEPTADO",
+    sunatMensaje: "Emitido fuera del ERP (portal SOL)",
+    fechaEmision: new Date(`${fecha}T12:00:00-05:00`),
+    moneda, tipoCambio,
+    clienteTipoDoc: doc?.tipo ?? "0", clienteNumDoc: doc?.numero ?? "-",
+    clienteNombre: nombre.slice(0, 300),
+    clienteDireccion: body.cliente?.direccion ? String(body.cliente.direccion).trim().slice(0, 300) : null,
+    valorVenta, igv, total,
+    formaPago, cuotas,
+    ...(detraccionMonto && { detraccionPorcentaje: pct, detraccionMonto }),
+    agenteRetencion: !!body.agenteRetencion,
+    observacion: body.observacion ? String(body.observacion).trim().slice(0, 500) || null : null,
+    items: [{
+      orden: 1, descripcion: `Según comprobante ${numero} emitido en el portal SOL`, unidad: "ZZ",
+      cantidad: 1, valorUnitario: valorVenta, valorVenta, igv, afectacionIgv: "10",
+    }],
+  };
+  return { datos, cobrado, numero };
+}
+
+// Crea el comprobante externo (y el cobro previo, si se indicó lo ya cobrado).
+async function crearExterno({ datos, cobrado, numero }, { usuarioId, cotizacion = null }) {
+  const { items, ...cabecera } = datos;
+  const existente = datos.clienteNumDoc === "-" ? null
+    : await prisma.cliente.findUnique({ where: { documento: datos.clienteNumDoc }, select: { id: true } });
+  try {
+    return await prisma.comprobante.create({
+      data: {
+        ...cabecera,
+        usuarioId,
+        cotizacionId: cotizacion?.id ?? null,
+        clienteId: cotizacion?.clienteId ?? existente?.id ?? null,
+        items: { create: items },
+        ...(cobrado > 0 && {
+          pagos: {
+            create: { tipo: "COBRO", monto: cobrado, medio: "OTRO", fecha: new Date(), nota: "Cobrado antes de registrarlo en el ERP", usuarioId },
+          },
+        }),
+      },
+      select: SELECT_RESUMEN,
+    });
+  } catch (error) {
+    if (error.code === "P2002") throw new ErrorValidacion(`El comprobante ${numero} ya está registrado`, 409);
+    throw error;
+  }
+}
+
+// POST /externos — registra uno. Con cotizacionId la cotización pasa a FACTURADA.
+exports.registrarExterno = async (req, res) => {
+  try {
+    const cotizacionId = req.body.cotizacionId ? Number(req.body.cotizacionId) : null;
+    const cotizacion = cotizacionId ? await cargarCotizacionFacturable(cotizacionId) : null;
+    const preparado = await prepararExterno(req.body);
+    const c = await crearExterno(preparado, { usuarioId: req.user.id, cotizacion });
+    if (cotizacion) await marcarCotizacionFacturada(cotizacionId, req.user.id, { numero: `${preparado.numero} (portal SOL)` });
+    res.status(201).json(conNumero(c));
+  } catch (error) {
+    responderError(res, error, "registrando comprobante externo");
+  }
+};
+
+// Columnas de la plantilla de importación (fila 1 = encabezados).
+const COLUMNAS_IMPORTACION = [
+  "Tipo", "Serie", "Numero", "Fecha emision", "RUC/DNI cliente", "Cliente", "Moneda",
+  "Total", "Detraccion %", "Forma de pago", "Vencimiento", "Cobrado",
+];
+const norm = (t) => String(t ?? "").normalize("NFD").replace(/[̀-ͯ]/g, "").toLowerCase().replace(/[^a-z0-9%]/g, "");
+
+// GET /externos/plantilla — Excel con los encabezados y una fila de ejemplo.
+exports.plantillaExternos = (req, res) => {
+  const ws = XLSX.utils.aoa_to_sheet([
+    COLUMNAS_IMPORTACION,
+    ["Factura", "E001", 1042, "15/09/2026", "20123456789", "CLIENTE EJEMPLO S.A.C.", "PEN", 1180, 12, "Crédito", "15/10/2026", 0],
+  ]);
+  ws["!cols"] = COLUMNAS_IMPORTACION.map(() => ({ wch: 18 }));
+  const wb = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb, ws, "Comprobantes");
+  res.set({
+    "Content-Type": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+    "Content-Disposition": "attachment; filename=plantilla-comprobantes-sol.xlsx",
+  });
+  res.send(XLSX.write(wb, { type: "buffer", bookType: "xlsx" }));
+};
+
+// POST /externos/importar (archivo .xlsx/.csv); ?simular=1 solo valida.
+// Responde { filas: [{ fila, numero, estado: "OK"|"ERROR"|"DUPLICADO", mensaje }], importados, simulado }.
+exports.importarExternos = async (req, res) => {
+  try {
+    if (!req.file) throw new ErrorValidacion("Adjunta el archivo Excel");
+    const wb = XLSX.read(req.file.buffer, { type: "buffer", cellDates: true });
+    const filas = XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]], { defval: "", raw: true });
+    if (filas.length === 0) throw new ErrorValidacion("El archivo no tiene filas");
+    if (filas.length > 1000) throw new ErrorValidacion("Máximo 1000 comprobantes por archivo");
+
+    const columna = Object.fromEntries(COLUMNAS_IMPORTACION.map((c) => [norm(c), c]));
+    const simular = req.query.simular === "1";
+    const resultado = [];
+    let importados = 0;
+
+    for (const [i, original] of filas.entries()) {
+      const f = {};
+      for (const [k, v] of Object.entries(original)) if (columna[norm(k)]) f[columna[norm(k)]] = v;
+      const fila = i + 2;
+      try {
+        const moneda = String(f["Moneda"] || "PEN").trim().toUpperCase();
+        const preparado = await prepararExterno({
+          tipo: norm(f["Tipo"]).startsWith("bol") ? "BOLETA" : "FACTURA",
+          serie: f["Serie"], correlativo: f["Numero"], fechaEmision: f["Fecha emision"],
+          cliente: { numDoc: String(f["RUC/DNI cliente"]).trim(), nombre: f["Cliente"] },
+          moneda: moneda === "S/" ? "PEN" : moneda === "US$" ? "USD" : moneda,
+          total: f["Total"], detraccionPorcentaje: f["Detraccion %"],
+          formaPago: norm(f["Forma de pago"]).startsWith("cred") ? "CREDITO" : "CONTADO",
+          fechaVencimiento: f["Vencimiento"], cobrado: f["Cobrado"],
+        });
+        const ya = await prisma.comprobante.findUnique({
+          where: { serie_correlativo: { serie: preparado.datos.serie, correlativo: preparado.datos.correlativo } },
+          select: { id: true },
+        });
+        if (ya) {
+          resultado.push({ fila, numero: preparado.numero, estado: "DUPLICADO", mensaje: "Ya estaba registrado" });
+          continue;
+        }
+        if (!simular) {
+          await crearExterno(preparado, { usuarioId: req.user.id });
+          importados++;
+        }
+        resultado.push({ fila, numero: preparado.numero, estado: "OK", mensaje: simular ? "Listo para importar" : "Importado" });
+      } catch (error) {
+        if (!(error instanceof ErrorValidacion) && !(error instanceof migo.ErrorMigo)) throw error;
+        resultado.push({ fila, numero: [f["Serie"], f["Numero"]].filter(Boolean).join("-"), estado: "ERROR", mensaje: error.message });
+      }
+    }
+    res.json({ filas: resultado, importados, simulado: simular });
+  } catch (error) {
+    responderError(res, error, "importando comprobantes externos");
+  }
+};
+
+// DELETE /externos/:id — solo externos sin cobros registrados.
+exports.eliminarExterno = async (req, res) => {
+  try {
+    const c = await prisma.comprobante.findUnique({
+      where: { id: Number(req.params.id) },
+      select: { id: true, origen: true, _count: { select: { pagos: true } } },
+    });
+    if (!c) throw new ErrorValidacion("Comprobante no encontrado", 404);
+    if (c.origen !== "EXTERNO") throw new ErrorValidacion("Solo se eliminan comprobantes registrados desde fuera del ERP");
+    if (c._count.pagos > 0) throw new ErrorValidacion("Tiene cobros registrados: elimínalos primero");
+    await prisma.comprobante.delete({ where: { id: c.id } });
+    res.json({ ok: true });
+  } catch (error) {
+    responderError(res, error, "eliminando comprobante externo");
   }
 };

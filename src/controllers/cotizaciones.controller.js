@@ -4,6 +4,7 @@ const cotizacionTemplate = require("../templates/cotizacionPdf.template");
 const { generarGlosa } = require("../utils/glosa");
 const { crearProyectoDesdeCotizacion } = require("../services/proyectoBridge");
 const { IGV_RATE, MARGEN_MINIMO } = require("../config/negocio");
+const { leerCondicion } = require("../utils/condicionPago");
 const { crearDesdeCotizacion: crearProyectoInterno } = require("./proyectos.controller");
 
 const registrarLog = (client, { cotizacionId, usuarioId, estadoAnterior, estadoNuevo, comentario }) =>
@@ -134,9 +135,13 @@ exports.crearCotizacion = async (req, res) => {
       solicitudUsada = solicitud;
     }
 
-    let itemsCalculados;
+    let itemsCalculados, condicion;
     try {
       itemsCalculados = await Promise.all(items.map((item) => calcularItem(prisma, item, margen)));
+      // Sin condición en el body, la cotización hereda la del cliente.
+      condicion = leerCondicion(req.body) ?? await prisma.cliente.findUnique({
+        where: { id: clienteIdInt }, select: { condicionPago: true, diasCredito: true },
+      });
     } catch (err) {
       return res.status(400).json({ message: err.message });
     }
@@ -144,6 +149,8 @@ exports.crearCotizacion = async (req, res) => {
     const crear = (numero) => prisma.cotizacion.create({
       data: {
         clienteId: clienteIdInt,
+        condicionPago: condicion?.condicionPago ?? "CONTADO",
+        diasCredito: condicion?.diasCredito ?? null,
         usuarioId: usuarioIdInt,
         numero,
         estado: "PENDIENTE",
@@ -413,6 +420,30 @@ exports.facturarCotizacion = async (req, res) => {
 };
 
 /* =========================
+   CONDICIÓN DE PAGO (contado / crédito a N días)
+   Se puede cambiar mientras la cotización no esté facturada.
+========================= */
+exports.actualizarCondicionPago = async (req, res) => {
+  try {
+    const condicion = leerCondicion(req.body);
+    if (!condicion) return res.status(400).json({ message: "Indica la condición de pago" });
+    const cotizacion = await prisma.cotizacion.findUnique({ where: { id: Number(req.params.id) } });
+    if (!cotizacion) return res.status(404).json({ message: "Cotización no encontrada" });
+    if (req.user.role === "VENTAS" && cotizacion.usuarioId !== req.user.id) {
+      return res.status(403).json({ message: "No autorizado" });
+    }
+    if (cotizacion.estado === "FACTURADA") {
+      return res.status(400).json({ message: "La cotización ya está facturada: la condición se ve en el comprobante" });
+    }
+    res.json(await prisma.cotizacion.update({ where: { id: cotizacion.id }, data: condicion }));
+  } catch (error) {
+    if (error.status === 400) return res.status(400).json({ message: error.message });
+    console.error("❌ Error actualizando condición de pago:", error);
+    res.status(500).json({ message: "Error actualizando condición de pago", error: error.message });
+  }
+};
+
+/* =========================
    OBTENER COTIZACIÓN ESPECÍFICA
 ========================= */
 exports.obtenerCotizacion = async (req, res) => {
@@ -527,6 +558,12 @@ exports.renegociarCotizacion = async (req, res) => {
     if (!Array.isArray(items) || items.length === 0) {
       return res.status(400).json({ message: "La cotización debe tener al menos un item" });
     }
+    let condicion;
+    try {
+      condicion = leerCondicion(req.body);
+    } catch (err) {
+      return res.status(400).json({ message: err.message });
+    }
 
     const margen = margenInput !== undefined ? Number(margenInput) : MARGEN_MINIMO;
     let solicitudUsada = null;
@@ -609,6 +646,7 @@ exports.renegociarCotizacion = async (req, res) => {
           respondidaAt: null,
           total,
           conIgv: igvFlag,
+          ...condicion,
         },
         include: {
           cliente: true,
