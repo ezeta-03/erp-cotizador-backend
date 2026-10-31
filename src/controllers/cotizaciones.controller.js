@@ -366,9 +366,16 @@ exports.responderCotizacion = async (req, res) => {
 /* =========================
    VENTAS/ADMIN/CONTABLE: FACTURAR
 ========================= */
+// Marca FACTURADA una cotización cuya factura se emitió fuera del ERP (p. ej.
+// en el portal SOL). Si llega comprobanteExterno ("E001-1042") queda en el
+// historial. Las emitidas desde el ERP pasan a FACTURADA solas al ser aceptadas.
 exports.facturarCotizacion = async (req, res) => {
   try {
     const cotizacionId = Number(req.params.id);
+    const comprobanteExterno = String(req.body?.comprobanteExterno || "").trim().toUpperCase();
+    if (comprobanteExterno && !/^[A-Z0-9]{4}-\d{1,8}$/.test(comprobanteExterno)) {
+      return res.status(400).json({ message: "El número del comprobante debe tener la forma E001-1042" });
+    }
 
     const cotizacion = await prisma.cotizacion.findUnique({ where: { id: cotizacionId } });
     if (!cotizacion) return res.status(404).json({ message: "Cotización no encontrada" });
@@ -395,6 +402,7 @@ exports.facturarCotizacion = async (req, res) => {
       usuarioId: req.user.id,
       estadoAnterior: "APROBADA",
       estadoNuevo: "FACTURADA",
+      comentario: comprobanteExterno ? `Facturada fuera del ERP: ${comprobanteExterno}` : null,
     });
 
     res.json(updated);

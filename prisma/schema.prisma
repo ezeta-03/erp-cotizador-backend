@@ -43,6 +43,8 @@ model Usuario {
   proyectosComoGerente     Proyecto[]          @relation("ProyectoGerenteResponsable")
   proyectosComoJefe        Proyecto[]          @relation("ProyectoJefeResponsable")
   solicitudesAlmacenResueltas SolicitudAlmacen[]
+  comprobantes             Comprobante[]
+  pagosComprobante         PagoComprobante[]
 }
 
 // Acomodo personal del panel de bienvenida (bento): qué bloques tiene cada
@@ -81,6 +83,7 @@ model Cliente {
   movimientosAlmacen MovimientoAlmacen[]
   ordenesAlmacen    OrdenAlmacen[]
   proyectos         Proyecto[]
+  comprobantes      Comprobante[]
 }
 
 model Producto {
@@ -137,6 +140,7 @@ model Cotizacion {
   reservas            Reserva[]
   solicitudesMargen   SolicitudMargen[]
   proyecto            Proyecto?
+  comprobantes        Comprobante[]
 }
 
 model CotizacionLog {
@@ -707,4 +711,126 @@ model ModulosRol {
   rol       Rol      @id
   modulos   String[]
   updatedAt DateTime @updatedAt
+}
+
+// ── Facturación electrónica (SUNAT vía PSE SmartPSE) ──────────────────────
+// El ERP arma el XML UBL 2.1, el PSE lo firma y lo envía a SUNAT; aquí se
+// guarda el XML firmado y el CDR (constancia de recepción) que devuelve SUNAT.
+
+enum TipoComprobante {
+  FACTURA // 01
+  BOLETA // 03
+  NOTA_CREDITO // 07
+  NOTA_DEBITO // 08
+}
+
+enum EstadoComprobante {
+  PENDIENTE // numerado, aún sin respuesta de SUNAT
+  ACEPTADO // CDR de aceptación (puede traer observaciones)
+  RECHAZADO // SUNAT lo rechazó: el número queda consumido
+  ERROR // falló la comunicación con el PSE; se puede reintentar
+}
+
+// Correlativo por serie (F001, B001, FC01, BC01). Se incrementa de forma atómica.
+model SerieComprobante {
+  serie       String          @id
+  tipo        TipoComprobante
+  correlativo Int             @default(0)
+  updatedAt   DateTime        @updatedAt
+}
+
+model Comprobante {
+  id                Int               @id @default(autoincrement())
+  tipo              TipoComprobante
+  serie             String
+  correlativo       Int
+  fechaEmision      DateTime          @default(now())
+  moneda            String            @default("PEN") // PEN | USD
+  tipoCambio        Float? // venta SUNAT del día de emisión (solo USD)
+  // Receptor (copiado al emitir: el comprobante no cambia si se edita el cliente)
+  clienteTipoDoc    String // catálogo 06: 6 RUC, 1 DNI, 0 sin documento
+  clienteNumDoc     String
+  clienteNombre     String
+  clienteDireccion  String?
+  valorVenta        Float // total sin IGV
+  igv               Float
+  total             Float
+  // Solo notas de crédito/débito: comprobante que modifica y motivo (catálogo 09 / 10)
+  referenciaId      Int?
+  referencia        Comprobante?      @relation("NotaCredito", fields: [referenciaId], references: [id])
+  notasCredito      Comprobante[]     @relation("NotaCredito")
+  motivoCodigo      String?
+  motivoDescripcion String?
+  observacion       String?
+  // Forma de pago (obligatoria en facturas): CONTADO, o CREDITO con cuotas [{ monto, fechaVencimiento }]
+  formaPago         String            @default("CONTADO")
+  cuotas            Json?
+  // Detracción (SPOT): código de bien/servicio (catálogo 54), %, monto y cuenta del Banco de la Nación
+  detraccionCodigo     String?
+  detraccionPorcentaje Float?
+  detraccionMonto      Float?
+  detraccionCuenta     String?
+  // El cliente es agente de retención (retiene 3% en facturas sin detracción > S/ 700)
+  agenteRetencion   Boolean           @default(false)
+  // Último envío por correo al cliente
+  correoEnviadoA    String?
+  correoEnviadoAt   DateTime?
+  // Última consulta de validez en SUNAT (vía Migo)
+  validacionSunat   Json?
+  validadoAt        DateTime?
+  estado            EstadoComprobante @default(PENDIENTE)
+  sunatCodigo       String?
+  sunatMensaje      String?
+  hash              String?
+  xmlFirmado        String?
+  cdrXml            String?
+  cotizacionId      Int?
+  cotizacion        Cotizacion?       @relation(fields: [cotizacionId], references: [id])
+  clienteId         Int?
+  cliente           Cliente?          @relation(fields: [clienteId], references: [id])
+  usuarioId         Int
+  usuario           Usuario           @relation(fields: [usuarioId], references: [id])
+  items             ComprobanteItem[]
+  pagos             PagoComprobante[]
+  createdAt         DateTime          @default(now())
+  updatedAt         DateTime          @updatedAt
+
+  @@unique([serie, correlativo])
+  @@index([cotizacionId])
+  @@index([estado])
+}
+
+model ComprobanteItem {
+  id            Int         @id @default(autoincrement())
+  comprobanteId Int
+  comprobante   Comprobante @relation(fields: [comprobanteId], references: [id], onDelete: Cascade)
+  orden         Int
+  descripcion   String
+  unidad        String      @default("ZZ") // catálogo 03: ZZ servicio, NIU unidad, MTK m², MTR metro
+  cantidad      Float
+  valorUnitario Float // sin IGV
+  valorVenta    Float // cantidad × valorUnitario
+  igv           Float
+  afectacionIgv String      @default("10") // catálogo 07: 10 gravado onerosa
+}
+
+// Cobros de un comprobante (cuentas por cobrar). COBRO: lo que paga el cliente
+// (neto = total − detracción). DETRACCION: depósito del cliente en la cuenta de
+// detracciones del Banco de la Nación. RETENCION: 3% que retiene un cliente agente
+// de retención (numeroOperacion = n.° del comprobante de retención).
+model PagoComprobante {
+  id               Int         @id @default(autoincrement())
+  comprobanteId    Int
+  comprobante      Comprobante @relation(fields: [comprobanteId], references: [id], onDelete: Cascade)
+  tipo             String      @default("COBRO") // COBRO | DETRACCION | RETENCION
+  fecha            DateTime
+  monto            Float
+  medio            String // TRANSFERENCIA | DEPOSITO | EFECTIVO | YAPE_PLIN | CHEQUE | OTRO
+  numeroOperacion  String?
+  nota             String?
+  usuarioId        Int
+  usuario          Usuario     @relation(fields: [usuarioId], references: [id])
+  createdAt        DateTime    @default(now())
+
+  @@index([comprobanteId])
 }
