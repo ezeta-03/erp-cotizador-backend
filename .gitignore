@@ -35,3 +35,6 @@ RENDER-CONFIGURACION.md
 
 # Datos reales de negocio (inventario, etc.) — no deben trackearse
 /data/
+
+# Chrome de Puppeteer (se descarga en el build, ver .puppeteerrc.cjs)
+/.cache/

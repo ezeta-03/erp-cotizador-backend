@@ -5,7 +5,7 @@
   "type": "commonjs",
   "scripts": {
     "dev": "nodemon src/server.js",
-    "postinstall": "prisma generate",
+    "postinstall": "prisma generate && puppeteer browsers install chrome",
     "start": "node src/server.js",
     "seed:parte1": "node prisma/seed-parte1.js",
     "seed:parte2": "node prisma/seed-parte2.js",
