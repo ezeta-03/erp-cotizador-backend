@@ -50,6 +50,7 @@ const comprobantesRoutes      = require("./routes/comprobantes.routes");
 const cuentasPorCobrarRoutes  = require("./routes/cuentasPorCobrar.routes");
 const cuentasPorPagarRoutes   = require("./routes/cuentasPorPagar.routes");
 const cajaBancosRoutes        = require("./routes/cajaBancos.routes");
+const libroMayorRoutes        = require("./routes/libroMayor.routes");
 
 // app.use(cors());
 app.use(express.json());
@@ -77,6 +78,7 @@ app.use("/api/comprobantes",      comprobantesRoutes);
 app.use("/api/cuentas-por-cobrar", cuentasPorCobrarRoutes);
 app.use("/api/cuentas-por-pagar", cuentasPorPagarRoutes);
 app.use("/api/caja-bancos",      cajaBancosRoutes);
+app.use("/api/libro-mayor",      libroMayorRoutes);
 
 // Health check endpoint
 app.get("/api/health", async (req, res) => {
