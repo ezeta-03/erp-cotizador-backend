@@ -1,7 +1,8 @@
 // HTML → PDF A4 con Puppeteer (mismas opciones que el PDF de cotizaciones).
 const puppeteer = require("puppeteer");
 
-async function htmlAPdf(html) {
+// opciones: se suman a las de page.pdf() (p. ej. pie de página con numeración).
+async function htmlAPdf(html, opciones = {}) {
   let browser = null;
   try {
     browser = await puppeteer.launch({
@@ -14,7 +15,7 @@ async function htmlAPdf(html) {
     const page = await browser.newPage();
     await page.setContent(html, { waitUntil: "load" });
     // page.pdf() devuelve un Uint8Array: se envuelve en Buffer para que Express lo mande como binario.
-    return Buffer.from(await page.pdf({ format: "A4", printBackground: true }));
+    return Buffer.from(await page.pdf({ format: "A4", printBackground: true, ...opciones }));
   } finally {
     if (browser) await browser.close().catch(() => {});
   }

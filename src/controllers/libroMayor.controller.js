@@ -1,13 +1,11 @@
-const XLSX = require("xlsx");
 const { libroMayor } = require("../services/libroMayor.service");
 const { hoyLima } = require("../services/cobros.service");
 const { htmlAPdf } = require("../services/pdf.service");
 const { emisor } = require("../config/emisor");
 const libroMayorPdf = require("../templates/libroMayorPdf.template");
+const { libroMayorExcel } = require("../services/libroMayorExcel");
 
 // Libro Mayor: GET /?desde&hasta[&formato=xlsx|pdf]. Por defecto, el mes actual.
-
-const GRUPO_LABEL = { CAJA_BANCOS: "Caja y Bancos", INGRESOS: "Ingresos", COSTO_VENTA: "Costo de venta", GASTO_OPERATIVO: "Gasto operativo" };
 
 function periodo(query) {
   const hoy = hoyLima();
@@ -19,49 +17,6 @@ function periodo(query) {
   return { desde, hasta };
 }
 
-const fechaDMA = (iso) => iso.split("-").reverse().join("/");
-
-// Nombre de hoja de Excel: máximo 31 caracteres, sin []:*?/\ y sin repetir.
-function nombreHoja(nombre, usados) {
-  const base = nombre.replace(/[[\]:*?/\\]/g, "-").slice(0, 28);
-  let n = base;
-  for (let i = 2; usados.has(n); i++) n = `${base.slice(0, 26)} ${i}`;
-  usados.add(n);
-  return n;
-}
-
-function libroExcel(m) {
-  const wb = XLSX.utils.book_new();
-  const resumen = [
-    [`Libro Mayor — ${emisor.razonSocial || ""}`],
-    [`Del ${fechaDMA(m.desde)} al ${fechaDMA(m.hasta)}`],
-    [],
-    ["Grupo", "Cuenta", "Moneda", "Saldo anterior", "Debe", "Haber", "Saldo final"],
-    ...m.cuentas.map((c) => [GRUPO_LABEL[c.grupo], c.nombre, c.moneda, c.saldoAnterior, c.debe, c.haber, c.saldoFinal]),
-    [],
-    ["Resultado del periodo (ventas − costo de venta − gasto operativo, S/)", "", "", "", "", "", m.resultadoPeriodo],
-  ];
-  const hojaResumen = XLSX.utils.aoa_to_sheet(resumen);
-  hojaResumen["!cols"] = [{ wch: 18 }, { wch: 40 }, { wch: 8 }, { wch: 14 }, { wch: 14 }, { wch: 14 }, { wch: 14 }];
-  XLSX.utils.book_append_sheet(wb, hojaResumen, "Resumen");
-
-  const usados = new Set(["Resumen"]);
-  for (const c of m.cuentas) {
-    const filas = [
-      [c.nombre, "", "", "", "", "", c.moneda],
-      [],
-      ["Fecha", "Documento", "Concepto", "Cliente / proveedor", "Debe", "Haber", "Saldo"],
-      ["", "", "Saldo anterior", "", "", "", c.saldoAnterior],
-      ...c.movimientos.map((x) => [fechaDMA(x.fecha), x.documento || "", x.concepto || "", x.tercero || "", x.debe || 0, x.haber || 0, x.saldo]),
-      ["", "", "Totales del periodo", "", c.debe, c.haber, c.saldoFinal],
-    ];
-    const hoja = XLSX.utils.aoa_to_sheet(filas);
-    hoja["!cols"] = [{ wch: 11 }, { wch: 18 }, { wch: 44 }, { wch: 32 }, { wch: 12 }, { wch: 12 }, { wch: 13 }];
-    XLSX.utils.book_append_sheet(wb, hoja, nombreHoja(c.nombre, usados));
-  }
-  return XLSX.write(wb, { type: "buffer", bookType: "xlsx" });
-}
-
 exports.obtener = async (req, res) => {
   try {
     const { desde, hasta } = periodo(req.query);
@@ -70,10 +25,12 @@ exports.obtener = async (req, res) => {
     if (req.query.formato === "xlsx") {
       res.setHeader("Content-Type", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
       res.setHeader("Content-Disposition", `attachment; filename="${nombre}.xlsx"`);
-      return res.send(libroExcel(m));
+      return res.send(await libroMayorExcel(m, { empresa: emisor.razonSocial, ruc: emisor.ruc }));
     }
     if (req.query.formato === "pdf") {
-      const pdf = await htmlAPdf(libroMayorPdf({ ...m, empresa: emisor.razonSocial, ruc: emisor.ruc }));
+      const pdf = await htmlAPdf(libroMayorPdf({ ...m, empresa: emisor.razonSocial, ruc: emisor.ruc }), {
+        preferCSSPageSize: true, displayHeaderFooter: true, headerTemplate: "<div></div>", footerTemplate: libroMayorPdf.piePagina,
+      });
       res.setHeader("Content-Type", "application/pdf");
       res.setHeader("Content-Disposition", `attachment; filename="${nombre}.pdf"`);
       return res.send(pdf);
