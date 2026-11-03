@@ -6,6 +6,7 @@ const { cronograma, antiguedad, tramosVacios, sumarTramos, diasEntre, fechaLima,
 const { leerCondicion } = require("../utils/condicionPago");
 const { sincronizarEstadoContrato } = require("./proveedores.controller");
 const almacenamiento = require("../services/almacenamiento.service");
+const { resolverCuenta } = require("../services/cajaBancos.service");
 
 // Cuentas por pagar: documentos de proveedores de compras (facturas, recibos
 // por honorarios…) y las cuotas de alquiler de los arrendadores de paneles.
@@ -234,7 +235,11 @@ const INCLUDE_CUENTA = {
   adjuntos: { select: SELECT_ADJUNTO, orderBy: { id: "asc" } },
   pagos: {
     orderBy: [{ fecha: "asc" }, { id: "asc" }],
-    include: { usuario: { select: { nombre: true } }, adjuntos: { select: SELECT_ADJUNTO, orderBy: { id: "asc" } } },
+    include: {
+      usuario: { select: { nombre: true } },
+      adjuntos: { select: SELECT_ADJUNTO, orderBy: { id: "asc" } },
+      cuentaFinanciera: { select: { id: true, nombre: true, moneda: true } },
+    },
   },
 };
 
@@ -554,12 +559,18 @@ exports.registrarPago = async (req, res) => {
       throw new ErrorValidacion(`El monto supera lo pendiente${tipo === "DETRACCION" ? " de detracción (S/)" : ""}: ${pendiente.toFixed(2)}`);
     }
 
+    // Cuenta de la que salió el dinero (Caja y Bancos); la detracción es en soles.
+    const enCuenta = await resolverCuenta({
+      cuentaId: req.body.cuentaFinancieraId, monedaPago: tipo === "DETRACCION" ? "PEN" : c.moneda,
+      monto, fecha, tipoCambio: req.body.tipoCambioCuenta,
+    });
+
     // Constancia opcional: se sube antes y, si el pago no se guarda, se borra del bucket.
     const adjunto = req.file ? await almacenamiento.subir(`pagos/${id}`, req.file) : null;
     try {
       await prisma.pagoCuentaPorPagar.create({
         data: {
-          cuentaId: id, tipo, monto, medio, fecha: fechaDia(fecha),
+          cuentaId: id, tipo, monto, medio, fecha: fechaDia(fecha), ...enCuenta,
           numeroOperacion: texto(req.body.numeroOperacion, 60),
           nota: texto(req.body.nota),
           usuarioId: req.user.id,
@@ -645,15 +656,24 @@ exports.urlAdjuntoPago = async (req, res) => {
 ========================= */
 const nombreArrendador = (p) => p.razonSocial || p.nombre;
 
-// POST /cuotas-paneles/:id/pagar  body: { fecha, medio, numeroOperacion? }
+// POST /cuotas-paneles/:id/pagar  body: { fecha, medio, numeroOperacion?, cuentaFinancieraId, tipoCambioCuenta? }
 exports.pagarCuotaPanel = async (req, res) => {
   try {
     const fecha = String(req.body.fecha || "").slice(0, 10);
     if (!/^\d{4}-\d{2}-\d{2}$/.test(fecha) || fecha > hoyLima()) throw new ErrorValidacion("Indica una fecha de pago válida (no futura)");
     if (!MEDIOS_PAGO.includes(req.body.medio)) throw new ErrorValidacion(`medio debe ser uno de: ${MEDIOS_PAGO.join(", ")}`);
+    const pendiente = await prisma.proveedorCuota.findFirst({ where: { id: Number(req.params.id), estado: "PENDIENTE" } });
+    if (!pendiente) throw new ErrorValidacion("La cuota no existe o ya está pagada");
+    const enCuenta = await resolverCuenta({
+      cuentaId: req.body.cuentaFinancieraId, monedaPago: "PEN", monto: r2(pendiente.monto + pendiente.igv),
+      fecha, tipoCambio: req.body.tipoCambioCuenta,
+    });
     const { count } = await prisma.proveedorCuota.updateMany({
-      where: { id: Number(req.params.id), estado: "PENDIENTE" },
-      data: { estado: "CANCELADO", fechaPago: fechaDia(fecha), medioPago: req.body.medio, numeroOperacion: texto(req.body.numeroOperacion, 60) },
+      where: { id: pendiente.id, estado: "PENDIENTE" },
+      data: {
+        estado: "CANCELADO", fechaPago: fechaDia(fecha), medioPago: req.body.medio, numeroOperacion: texto(req.body.numeroOperacion, 60),
+        ...enCuenta,
+      },
     });
     if (count === 0) throw new ErrorValidacion("La cuota no existe o ya está pagada");
     const cuota = await prisma.proveedorCuota.findUnique({ where: { id: Number(req.params.id) } });
@@ -669,7 +689,7 @@ exports.revertirCuotaPanel = async (req, res) => {
   try {
     const { count } = await prisma.proveedorCuota.updateMany({
       where: { id: Number(req.params.id), estado: "CANCELADO" },
-      data: { estado: "PENDIENTE", fechaPago: null, medioPago: null, numeroOperacion: null },
+      data: { estado: "PENDIENTE", fechaPago: null, medioPago: null, numeroOperacion: null, cuentaFinancieraId: null, montoCuenta: null, tipoCambioCuenta: null },
     });
     if (count === 0) throw new ErrorValidacion("La cuota no existe o no está pagada");
     const cuota = await prisma.proveedorCuota.findUnique({ where: { id: Number(req.params.id) } });

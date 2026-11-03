@@ -376,23 +376,29 @@ model Proveedor {
 }
 
 model ProveedorCuota {
-  id              Int         @id @default(autoincrement())
-  proveedorId     Int
-  numero          Int
-  monto           Float
-  igv             Float
-  fecha           String      @default("")
-  fechaCobro      DateTime?
-  estado          EstadoCuota @default(PENDIENTE)
-  detalle         String?
+  id                 Int               @id @default(autoincrement())
+  proveedorId        Int
+  numero             Int
+  monto              Float
+  igv                Float
+  fecha              String            @default("")
+  fechaCobro         DateTime?
+  estado             EstadoCuota       @default(PENDIENTE)
+  detalle            String?
   // Pago registrado desde Cuentas por pagar (al cancelar la cuota).
-  fechaPago       DateTime?
-  medioPago       String?
-  numeroOperacion String?
-  proveedor       Proveedor   @relation(fields: [proveedorId], references: [id])
+  fechaPago          DateTime?
+  medioPago          String?
+  numeroOperacion    String?
+  proveedor          Proveedor         @relation(fields: [proveedorId], references: [id])
+  // Caja y Bancos: cuenta de la que salió el pago (registrado desde Cuentas por pagar)
+  cuentaFinancieraId Int?
+  cuentaFinanciera   CuentaFinanciera? @relation(fields: [cuentaFinancieraId], references: [id])
+  montoCuenta        Float?
+  tipoCambioCuenta   Float?
 
   @@index([proveedorId])
   @@index([fechaCobro])
+  @@index([cuentaFinancieraId])
 }
 
 enum EventoUsuario {
@@ -842,21 +848,28 @@ model ComprobanteItem {
 // detracciones del Banco de la Nación. RETENCION: 3% que retiene un cliente agente
 // de retención (numeroOperacion = n.° del comprobante de retención).
 model PagoComprobante {
-  id              Int           @id @default(autoincrement())
-  comprobanteId   Int
-  comprobante     Comprobante   @relation(fields: [comprobanteId], references: [id], onDelete: Cascade)
-  tipo            String        @default("COBRO") // COBRO | DETRACCION | RETENCION
-  fecha           DateTime
-  monto           Float
-  medio           String // TRANSFERENCIA | DEPOSITO | EFECTIVO | YAPE_PLIN | CHEQUE | OTRO
-  numeroOperacion String?
-  nota            String?
-  usuarioId       Int
-  usuario         Usuario       @relation(fields: [usuarioId], references: [id])
-  adjuntos        AdjuntoPago[]
-  createdAt       DateTime      @default(now())
+  id                 Int               @id @default(autoincrement())
+  comprobanteId      Int
+  comprobante        Comprobante       @relation(fields: [comprobanteId], references: [id], onDelete: Cascade)
+  tipo               String            @default("COBRO") // COBRO | DETRACCION | RETENCION
+  fecha              DateTime
+  monto              Float
+  medio              String // TRANSFERENCIA | DEPOSITO | EFECTIVO | YAPE_PLIN | CHEQUE | OTRO
+  numeroOperacion    String?
+  nota               String?
+  usuarioId          Int
+  usuario            Usuario           @relation(fields: [usuarioId], references: [id])
+  adjuntos           AdjuntoPago[]
+  createdAt          DateTime          @default(now())
+  // Caja y Bancos: cuenta donde entró/salió el dinero y el monto en la moneda
+  // de la cuenta (con tipoCambioCuenta si la moneda del pago es otra).
+  cuentaFinancieraId Int?
+  cuentaFinanciera   CuentaFinanciera? @relation(fields: [cuentaFinancieraId], references: [id])
+  montoCuenta        Float?
+  tipoCambioCuenta   Float?
 
   @@index([comprobanteId])
+  @@index([cuentaFinancieraId])
 }
 
 // ── Cuentas por pagar ─────────────────────────────────────────────────────
@@ -967,21 +980,28 @@ model CuentaPorPagar {
 // PAGO: lo que se transfiere al proveedor (neto = total − detracción − retención).
 // DETRACCION: depósito en su cuenta del Banco de la Nación (soles).
 model PagoCuentaPorPagar {
-  id              Int            @id @default(autoincrement())
-  cuentaId        Int
-  cuenta          CuentaPorPagar @relation(fields: [cuentaId], references: [id], onDelete: Cascade)
-  tipo            String         @default("PAGO") // PAGO | DETRACCION
-  fecha           DateTime
-  monto           Float
-  medio           String
-  numeroOperacion String?
-  nota            String?
-  usuarioId       Int
-  usuario         Usuario        @relation(fields: [usuarioId], references: [id])
-  adjuntos        AdjuntoPago[]
-  createdAt       DateTime       @default(now())
+  id                 Int               @id @default(autoincrement())
+  cuentaId           Int
+  cuenta             CuentaPorPagar    @relation(fields: [cuentaId], references: [id], onDelete: Cascade)
+  tipo               String            @default("PAGO") // PAGO | DETRACCION
+  fecha              DateTime
+  monto              Float
+  medio              String
+  numeroOperacion    String?
+  nota               String?
+  usuarioId          Int
+  usuario            Usuario           @relation(fields: [usuarioId], references: [id])
+  adjuntos           AdjuntoPago[]
+  createdAt          DateTime          @default(now())
+  // Caja y Bancos: cuenta donde entró/salió el dinero y el monto en la moneda
+  // de la cuenta (con tipoCambioCuenta si la moneda del pago es otra).
+  cuentaFinancieraId Int?
+  cuentaFinanciera   CuentaFinanciera? @relation(fields: [cuentaFinancieraId], references: [id])
+  montoCuenta        Float?
+  tipoCambioCuenta   Float?
 
   @@index([cuentaId])
+  @@index([cuentaFinancieraId])
 }
 
 // Constancia de un cobro o pago (voucher, captura de Yape, constancia de
@@ -1007,4 +1027,27 @@ model AdjuntoPago {
   @@index([pagoComprobanteId])
   @@index([pagoCuentaPorPagarId])
   @@index([cuentaPorPagarId])
+}
+
+// ── Caja y Bancos ─────────────────────────────────────────────────────────
+// Cuentas de la empresa (bancos, caja, cuenta de detracciones del Banco de la
+// Nación, billeteras). Saldo = saldoInicial a fechaSaldoInicial + cobros que
+// entraron − pagos que salieron desde esa fecha (no hay movimientos manuales).
+model CuentaFinanciera {
+  id                Int                  @id @default(autoincrement())
+  nombre            String
+  tipo              String               @default("BANCO") // BANCO | CAJA | DETRACCIONES | BILLETERA
+  banco             String?
+  numero            String?
+  cci               String?
+  moneda            String               @default("PEN") // PEN | USD
+  saldoInicial      Float                @default(0)
+  fechaSaldoInicial DateTime
+  orden             Int                  @default(0)
+  activo            Boolean              @default(true)
+  createdAt         DateTime             @default(now())
+  updatedAt         DateTime             @updatedAt
+  cobros            PagoComprobante[]
+  pagos             PagoCuentaPorPagar[]
+  cuotasPanel       ProveedorCuota[]
 }

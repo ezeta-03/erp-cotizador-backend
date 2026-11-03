@@ -10,6 +10,7 @@ const { htmlAPdf } = require("../services/pdf.service");
 const comprobantePdfTemplate = require("../templates/comprobantePdf.template");
 const QRCode = require("qrcode");
 const almacenamiento = require("../services/almacenamiento.service");
+const { resolverCuenta } = require("../services/cajaBancos.service");
 
 // Catálogos 09 (nota de crédito) y 10 (nota de débito). Los motivos "total"
 // anulan el comprobante copiando todos sus ítems; el resto lleva ítems propios
@@ -691,7 +692,11 @@ async function cargarConPagos(id) {
       ...SELECT_RESUMEN,
       pagos: {
         orderBy: [{ fecha: "asc" }, { id: "asc" }],
-        include: { usuario: { select: { nombre: true } }, adjuntos: { select: SELECT_ADJUNTO, orderBy: { id: "asc" } } },
+        include: {
+          usuario: { select: { nombre: true } },
+          adjuntos: { select: SELECT_ADJUNTO, orderBy: { id: "asc" } },
+          cuentaFinanciera: { select: { id: true, nombre: true, moneda: true } },
+        },
       },
       notasCredito: NOTAS_ACEPTADAS,
     },
@@ -743,13 +748,19 @@ exports.registrarPago = async (req, res) => {
       );
     }
 
+    // Cuenta donde entró el dinero (Caja y Bancos); la retención no es dinero que entra.
+    const enCuenta = tipo === "RETENCION" ? {} : await resolverCuenta({
+      cuentaId: req.body.cuentaFinancieraId, monedaPago: tipo === "DETRACCION" ? "PEN" : c.moneda,
+      monto, fecha, tipoCambio: req.body.tipoCambioCuenta,
+    });
+
     // Constancia opcional (voucher o constancia de detracción): se sube antes y,
     // si el pago no llega a guardarse, se borra del bucket.
     const adjunto = req.file ? await almacenamiento.subir(`cobros/${id}`, req.file) : null;
     try {
       await prisma.pagoComprobante.create({
         data: {
-          comprobanteId: id, tipo, monto, medio,
+          comprobanteId: id, tipo, monto, medio, ...enCuenta,
           fecha: new Date(`${fecha}T12:00:00-05:00`),
           numeroOperacion: req.body.numeroOperacion ? String(req.body.numeroOperacion).trim().slice(0, 60) || null : null,
           nota: req.body.nota ? String(req.body.nota).trim().slice(0, 300) || null : null,

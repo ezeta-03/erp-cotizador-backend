@@ -4,7 +4,7 @@ const prisma = require("../config/prisma");
 // Mantener sincronizado con src/constants/modulos.js del frontend.
 const MODULOS_POR_ROL = {
   VENTAS: ["dashboard", "clientes", "almacen", "proyectos", "outdoor", "btl"],
-  CONTABLE: ["dashboard", "clientes", "facturar", "cuentas-por-cobrar", "cuentas-por-pagar", "almacen", "proyectos", "outdoor", "btl"],
+  CONTABLE: ["dashboard", "clientes", "facturar", "cuentas-por-cobrar", "cuentas-por-pagar", "caja-bancos", "almacen", "proyectos", "outdoor", "btl"],
 };
 
 async function habilitadosPorRol() {
