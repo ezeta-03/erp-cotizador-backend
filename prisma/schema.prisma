@@ -864,24 +864,52 @@ model PagoComprobante {
 // Distinto de Proveedor, que son los arrendadores de paneles con contrato y
 // cuotas mensuales; esas cuotas también se muestran en Cuentas por pagar.
 model ProveedorCompra {
-  id              Int              @id @default(autoincrement())
-  ruc             String           @unique // RUC (11) o DNI (8) para recibos por honorarios
-  razonSocial     String
-  nombreComercial String?
-  direccion       String?
-  contacto        String?
-  telefono        String?
-  email           String?
-  banco           String?
-  numeroCuenta    String?
-  cci             String?
+  id                     Int              @id @default(autoincrement())
+  // RUC (11), DNI (8) o vacío para vendedores informales (notas de venta)
+  ruc                    String?          @unique
+  tipoDocIdentidad       String           @default("RUC") // RUC | DNI | NINGUNO
+  razonSocial            String
+  nombreComercial        String?
+  direccion              String?
+  contacto               String?
+  telefono               String?
+  email                  String?
+  banco                  String?
+  numeroCuenta           String?
+  cci                    String?
   // Condición de pago por defecto al registrar sus facturas
-  condicionPago   String           @default("CONTADO")
-  diasCredito     Int?
-  activo          Boolean          @default(true)
-  createdAt       DateTime         @default(now())
-  updatedAt       DateTime         @updatedAt
-  cuentas         CuentaPorPagar[]
+  condicionPago          String           @default("CONTADO")
+  diasCredito            Int?
+  // PRODUCTO (mercadería que pasa por almacén) o SERVICIO. afectaComercializacion:
+  // su gasto es costo de venta (imprenta, materiales) y no gasto operativo (luz, contador).
+  tipo                   String           @default("PRODUCTO")
+  afectaComercializacion Boolean          @default(true)
+  // Categoría de gasto que se precarga al registrar sus documentos
+  categoriaGastoId       Int?
+  categoriaGasto         CategoriaGasto?  @relation(fields: [categoriaGastoId], references: [id])
+  activo                 Boolean          @default(true)
+  createdAt              DateTime         @default(now())
+  updatedAt              DateTime         @updatedAt
+  cuentas                CuentaPorPagar[]
+}
+
+// Catálogo editable de categorías de gasto, con un nivel de subcategorías
+// (Servicios básicos > Luz). El grupo (costo de venta o gasto operativo) se
+// define en la categoría principal y lo heredan sus subcategorías.
+model CategoriaGasto {
+  id          Int               @id @default(autoincrement())
+  nombre      String
+  grupo       String            @default("GASTO_OPERATIVO") // COSTO_VENTA | GASTO_OPERATIVO
+  padreId     Int?
+  padre       CategoriaGasto?   @relation("Subcategorias", fields: [padreId], references: [id])
+  hijos       CategoriaGasto[]  @relation("Subcategorias")
+  orden       Int               @default(0)
+  activo      Boolean           @default(true)
+  createdAt   DateTime          @default(now())
+  cuentas     CuentaPorPagar[]
+  proveedores ProveedorCompra[]
+
+  @@index([padreId])
 }
 
 // Documento recibido de un proveedor (factura, recibo por honorarios, boleta…)
@@ -892,7 +920,7 @@ model CuentaPorPagar {
   id                  Int                  @id @default(autoincrement())
   proveedorId         Int
   proveedor           ProveedorCompra      @relation(fields: [proveedorId], references: [id])
-  tipoDocumento       String               @default("FACTURA") // FACTURA | RECIBO_HONORARIOS | BOLETA | NOTA_DEBITO | OTRO
+  tipoDocumento       String               @default("FACTURA") // FACTURA | RECIBO_HONORARIOS | BOLETA | NOTA_DEBITO | NOTA_VENTA | OTRO
   serie               String
   numero              String
   fechaEmision        DateTime
@@ -905,7 +933,15 @@ model CuentaPorPagar {
   // de la Nación (en soles) y retención (p. ej. 8% de 4ta categoría en RH).
   detraccionMonto     Float?
   retencionMonto      Float?
-  categoria           String               @default("COMPRA") // COMPRA | SERVICIO | GASTO_PROYECTO | OTRO
+  // Categoría antigua (COMPRA | SERVICIO | GASTO_PROYECTO | OTRO); la reemplaza categoriaGasto.
+  categoria           String               @default("COMPRA")
+  categoriaGastoId    Int?
+  categoriaGasto      CategoriaGasto?      @relation(fields: [categoriaGastoId], references: [id])
+  // Gasto sin comprobante válido (nota de venta): no da crédito fiscal ni es deducible.
+  deducible           Boolean              @default(true)
+  // Compra a proveedor de producto: false si la mercadería no pasa por almacén
+  // (se entrega directo); así no queda como INGRESO/SALIDA PENDIENTE.
+  pasaPorAlmacen      Boolean              @default(true)
   descripcion         String?
   formaPago           String               @default("CONTADO")
   cuotas              Json? // [{ monto, fechaVencimiento }] en crédito; contado vence en la emisión
@@ -919,6 +955,7 @@ model CuentaPorPagar {
   usuarioId           Int
   usuario             Usuario              @relation(fields: [usuarioId], references: [id])
   pagos               PagoCuentaPorPagar[]
+  adjuntos            AdjuntoPago[]
   createdAt           DateTime             @default(now())
   updatedAt           DateTime             @updatedAt
 
@@ -948,8 +985,9 @@ model PagoCuentaPorPagar {
 }
 
 // Constancia de un cobro o pago (voucher, captura de Yape, constancia de
-// detracción del Banco de la Nación…): imagen o PDF guardado en Supabase
-// Storage (bucket privado); se descarga con una URL firmada temporal.
+// detracción del Banco de la Nación…) o foto de un documento por pagar (nota
+// de venta): imagen o PDF guardado en Supabase Storage (bucket privado); se
+// descarga con una URL firmada temporal.
 model AdjuntoPago {
   id                   Int                 @id @default(autoincrement())
   ruta                 String              @unique // ruta dentro del bucket
@@ -960,10 +998,13 @@ model AdjuntoPago {
   pagoComprobante      PagoComprobante?    @relation(fields: [pagoComprobanteId], references: [id], onDelete: Cascade)
   pagoCuentaPorPagarId Int?
   pagoCuentaPorPagar   PagoCuentaPorPagar? @relation(fields: [pagoCuentaPorPagarId], references: [id], onDelete: Cascade)
+  cuentaPorPagarId     Int?
+  cuentaPorPagar       CuentaPorPagar?     @relation(fields: [cuentaPorPagarId], references: [id], onDelete: Cascade)
   usuarioId            Int
   usuario              Usuario             @relation(fields: [usuarioId], references: [id])
   createdAt            DateTime            @default(now())
 
   @@index([pagoComprobanteId])
   @@index([pagoCuentaPorPagarId])
+  @@index([cuentaPorPagarId])
 }

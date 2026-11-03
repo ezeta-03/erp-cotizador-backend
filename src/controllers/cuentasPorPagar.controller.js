@@ -9,8 +9,12 @@ const almacenamiento = require("../services/almacenamiento.service");
 
 // Cuentas por pagar: documentos de proveedores de compras (facturas, recibos
 // por honorarios…) y las cuotas de alquiler de los arrendadores de paneles.
-const TIPOS_DOCUMENTO = ["FACTURA", "RECIBO_HONORARIOS", "BOLETA", "NOTA_DEBITO", "OTRO"];
-const CATEGORIAS = ["COMPRA", "SERVICIO", "GASTO_PROYECTO", "OTRO"];
+const TIPOS_DOCUMENTO = ["FACTURA", "RECIBO_HONORARIOS", "BOLETA", "NOTA_DEBITO", "NOTA_VENTA", "OTRO"];
+// Documentos que exigen que el proveedor tenga RUC.
+const REQUIEREN_RUC = ["FACTURA", "RECIBO_HONORARIOS", "NOTA_DEBITO"];
+const TIPOS_DOC_IDENTIDAD = ["RUC", "DNI", "NINGUNO"];
+const TIPOS_PROVEEDOR = ["PRODUCTO", "SERVICIO"];
+const GRUPOS_GASTO = ["COSTO_VENTA", "GASTO_OPERATIVO"];
 const TIPOS_PAGO = ["PAGO", "DETRACCION"];
 const MONEDAS = ["PEN", "USD"];
 // Cuotas de paneles que entran a la cartera: vencidas o que vencen en estos días.
@@ -43,13 +47,26 @@ const fechaDia = (f) => new Date(`${f}T12:00:00-05:00`);
 /* =========================
    PROVEEDORES DE COMPRAS
 ========================= */
-function datosProveedor(body, parcial = false) {
+// Documento de identidad: RUC (11), DNI (8) o ninguno (vendedor informal, para notas de venta).
+function documentoProveedor(body) {
+  const ruc = String(body.ruc || "").trim();
+  const tipo = String(body.tipoDocIdentidad || (ruc.length === 8 ? "DNI" : "RUC")).toUpperCase();
+  if (!TIPOS_DOC_IDENTIDAD.includes(tipo)) throw new ErrorValidacion(`tipoDocIdentidad debe ser uno de: ${TIPOS_DOC_IDENTIDAD.join(", ")}`);
+  if (tipo === "RUC" && !/^\d{11}$/.test(ruc)) throw new ErrorValidacion("Ingresa un RUC de 11 dígitos");
+  if (tipo === "DNI" && !/^\d{8}$/.test(ruc)) throw new ErrorValidacion("Ingresa un DNI de 8 dígitos");
+  return { tipoDocIdentidad: tipo, ruc: tipo === "NINGUNO" ? null : ruc };
+}
+
+async function datosProveedor(body, parcial = false) {
   const data = {};
-  if (!parcial || body.ruc !== undefined) {
-    const ruc = String(body.ruc || "").trim();
-    if (!/^(\d{11}|\d{8})$/.test(ruc)) throw new ErrorValidacion("Ingresa un RUC de 11 dígitos (o DNI de 8)");
-    data.ruc = ruc;
+  if (!parcial || body.ruc !== undefined || body.tipoDocIdentidad !== undefined) Object.assign(data, documentoProveedor(body));
+  if (!parcial || body.tipo !== undefined) {
+    const tipo = String(body.tipo || "PRODUCTO").toUpperCase();
+    if (!TIPOS_PROVEEDOR.includes(tipo)) throw new ErrorValidacion("tipo debe ser PRODUCTO o SERVICIO");
+    data.tipo = tipo;
   }
+  if (body.afectaComercializacion !== undefined) data.afectaComercializacion = !!body.afectaComercializacion;
+  if (body.categoriaGastoId !== undefined) data.categoriaGastoId = await validarCategoria(body.categoriaGastoId);
   if (!parcial || body.razonSocial !== undefined) {
     const razonSocial = texto(body.razonSocial);
     if (!razonSocial) throw new ErrorValidacion("Falta la razón social");
@@ -76,6 +93,7 @@ exports.listarProveedores = async (req, res) => {
           ],
         }),
       },
+      include: { categoriaGasto: { select: { id: true, nombre: true } } },
       orderBy: { razonSocial: "asc" },
     });
     res.json(proveedores);
@@ -86,7 +104,7 @@ exports.listarProveedores = async (req, res) => {
 
 exports.crearProveedor = async (req, res) => {
   try {
-    res.status(201).json(await prisma.proveedorCompra.create({ data: datosProveedor(req.body) }));
+    res.status(201).json(await prisma.proveedorCompra.create({ data: await datosProveedor(req.body) }));
   } catch (error) {
     if (error.code === "P2002") return res.status(409).json({ message: "Ya hay un proveedor con ese RUC" });
     responderError(res, error, "creando proveedor");
@@ -97,7 +115,7 @@ exports.actualizarProveedor = async (req, res) => {
   try {
     res.json(await prisma.proveedorCompra.update({
       where: { id: Number(req.params.id) },
-      data: datosProveedor(req.body, true),
+      data: await datosProveedor(req.body, true),
     }));
   } catch (error) {
     if (error.code === "P2002") return res.status(409).json({ message: "Ya hay un proveedor con ese RUC" });
@@ -107,16 +125,116 @@ exports.actualizarProveedor = async (req, res) => {
 };
 
 /* =========================
+   CATEGORÍAS DE GASTO (catálogo editable, un nivel de subcategorías)
+========================= */
+// Id de una categoría activa (o null si viene vacío). permitida: la que ya
+// tenía el documento, que se acepta aunque luego se haya desactivado.
+async function validarCategoria(valor, permitida = null) {
+  if (valor === null || valor === undefined || valor === "") return null;
+  const cat = await prisma.categoriaGasto.findUnique({ where: { id: Number(valor) }, select: { id: true, activo: true } });
+  if (!cat) throw new ErrorValidacion("Categoría de gasto no encontrada");
+  if (!cat.activo && cat.id !== permitida) throw new ErrorValidacion("La categoría de gasto está desactivada");
+  return cat.id;
+}
+
+// Árbol: categorías principales con sus subcategorías, ordenadas.
+async function arbolCategorias(todas = false) {
+  const lista = await prisma.categoriaGasto.findMany({
+    where: todas ? {} : { activo: true },
+    orderBy: [{ orden: "asc" }, { nombre: "asc" }],
+    include: { _count: { select: { cuentas: true } } },
+  });
+  const fila = ({ _count, ...c }) => ({ ...c, documentos: _count.cuentas });
+  return lista.filter((c) => !c.padreId).map((c) => ({
+    ...fila(c),
+    hijos: lista.filter((h) => h.padreId === c.id).map((h) => ({ ...fila(h), grupo: c.grupo })),
+  }));
+}
+
+// GET /categorias?todas=1
+exports.listarCategorias = async (req, res) => {
+  try {
+    res.json(await arbolCategorias(req.query.todas === "1"));
+  } catch (error) {
+    responderError(res, error, "listando categorías");
+  }
+};
+
+async function datosCategoria(body, actual = null) {
+  const data = {};
+  if (!actual || body.nombre !== undefined) {
+    const nombre = texto(body.nombre, 80);
+    if (!nombre) throw new ErrorValidacion("Falta el nombre de la categoría");
+    data.nombre = nombre;
+  }
+  if (!actual && body.padreId) {
+    const padre = await prisma.categoriaGasto.findUnique({ where: { id: Number(body.padreId) } });
+    if (!padre) throw new ErrorValidacion("Categoría principal no encontrada");
+    if (padre.padreId) throw new ErrorValidacion("Solo se permite un nivel de subcategorías");
+    data.padreId = padre.id;
+    data.grupo = padre.grupo;
+  } else if (body.grupo !== undefined && !(actual?.padreId)) {
+    const grupo = String(body.grupo).toUpperCase();
+    if (!GRUPOS_GASTO.includes(grupo)) throw new ErrorValidacion("grupo debe ser COSTO_VENTA o GASTO_OPERATIVO");
+    data.grupo = grupo;
+  }
+  if (body.orden !== undefined) data.orden = Number(body.orden) || 0;
+  if (body.activo !== undefined) data.activo = !!body.activo;
+  // Nombre único entre hermanas.
+  if (data.nombre) {
+    const padreId = data.padreId ?? actual?.padreId ?? null;
+    const repetida = await prisma.categoriaGasto.findFirst({
+      where: { padreId, nombre: { equals: data.nombre, mode: "insensitive" }, ...(actual && { id: { not: actual.id } }) },
+    });
+    if (repetida) throw new ErrorValidacion("Ya existe una categoría con ese nombre");
+  }
+  return data;
+}
+
+exports.crearCategoria = async (req, res) => {
+  try {
+    await prisma.categoriaGasto.create({ data: await datosCategoria(req.body) });
+    res.status(201).json(await arbolCategorias(true));
+  } catch (error) {
+    responderError(res, error, "creando categoría");
+  }
+};
+
+// PUT /categorias/:id — nombre, grupo (principal; se propaga a sus subcategorías), orden, activo.
+exports.actualizarCategoria = async (req, res) => {
+  try {
+    const actual = await prisma.categoriaGasto.findUnique({ where: { id: Number(req.params.id) } });
+    if (!actual) throw new ErrorValidacion("Categoría no encontrada", 404);
+    const data = await datosCategoria(req.body, actual);
+    await prisma.$transaction([
+      prisma.categoriaGasto.update({ where: { id: actual.id }, data }),
+      ...(data.grupo ? [prisma.categoriaGasto.updateMany({ where: { padreId: actual.id }, data: { grupo: data.grupo } })] : []),
+    ]);
+    res.json(await arbolCategorias(true));
+  } catch (error) {
+    responderError(res, error, "actualizando categoría");
+  }
+};
+
+/* =========================
    DOCUMENTOS POR PAGAR
 ========================= */
+const SELECT_ADJUNTO = { id: true, nombre: true, tipo: true, tamano: true };
 const INCLUDE_CUENTA = {
-  proveedor: { select: { id: true, ruc: true, razonSocial: true, nombreComercial: true, banco: true, numeroCuenta: true, cci: true } },
+  proveedor: {
+    select: {
+      id: true, ruc: true, tipoDocIdentidad: true, razonSocial: true, nombreComercial: true, banco: true, numeroCuenta: true, cci: true,
+      tipo: true, afectaComercializacion: true,
+    },
+  },
+  categoriaGasto: { select: { id: true, nombre: true, grupo: true, padre: { select: { nombre: true } } } },
   proyecto: { select: { id: true, nombre: true } },
-  ordenAlmacen: { select: { id: true, fecha: true, notas: true } },
-  movimientoAlmacen: { select: { id: true, fecha: true, cantidad: true, item: { select: { codigo: true, nombre: true } } } },
+  ordenAlmacen: { select: { id: true, fecha: true, notas: true, items: { select: { itemAlmacenId: true, cantidad: true } } } },
+  movimientoAlmacen: { select: { id: true, fecha: true, cantidad: true, itemAlmacenId: true, item: { select: { codigo: true, nombre: true } } } },
+  adjuntos: { select: SELECT_ADJUNTO, orderBy: { id: "asc" } },
   pagos: {
     orderBy: [{ fecha: "asc" }, { id: "asc" }],
-    include: { usuario: { select: { nombre: true } }, adjuntos: { select: { id: true, nombre: true, tipo: true, tamano: true }, orderBy: { id: "asc" } } },
+    include: { usuario: { select: { nombre: true } }, adjuntos: { select: SELECT_ADJUNTO, orderBy: { id: "asc" } } },
   },
 };
 
@@ -144,7 +262,46 @@ function resumenPago(c, hoy = hoyLima()) {
   return { estado, neto, pagado, saldo, detraccionPagada, saldoDetraccion, vencimiento, diasVencido, tramos: c.anulado ? tramosVacios() : tramos };
 }
 
-const conResumen = (c, hoy) => ({ ...c, documento: `${c.serie}-${c.numero}`, pago: resumenPago(c, hoy) });
+/* Estado de almacén de una compra a proveedor de PRODUCTO (null si no aplica):
+   INGRESO_PENDIENTE  aún no se vincula la entrada de almacén
+   SALIDA_PENDIENTE   ya entró, es para un proyecto y aún no sale todo hacia él
+   DESPACHADO         ya salió al proyecto
+   INGRESADO          entró y queda en stock (sin proyecto)
+   Recibe las cuentas con INCLUDE_CUENTA y devuelve Map id → estado. */
+async function estadosAlmacen(cuentas) {
+  const aplica = cuentas.filter((c) => c.proveedor.tipo === "PRODUCTO" && c.pasaPorAlmacen && !c.anulado);
+  const entrada = (c) => (c.ordenAlmacen
+    ? { fecha: c.ordenAlmacen.fecha, items: c.ordenAlmacen.items }
+    : c.movimientoAlmacen ? { fecha: c.movimientoAlmacen.fecha, items: [{ itemAlmacenId: c.movimientoAlmacen.itemAlmacenId, cantidad: c.movimientoAlmacen.cantidad }] }
+    : null);
+  const porDespachar = aplica.filter((c) => c.proyectoId && entrada(c));
+  const salidas = porDespachar.length ? await prisma.movimientoAlmacen.findMany({
+    where: {
+      tipo: "SALIDA",
+      proyectoId: { in: [...new Set(porDespachar.map((c) => c.proyectoId))] },
+      itemAlmacenId: { in: [...new Set(porDespachar.flatMap((c) => entrada(c).items.map((it) => it.itemAlmacenId)))] },
+    },
+    select: { proyectoId: true, itemAlmacenId: true, cantidad: true, fecha: true },
+  }) : [];
+
+  const estados = new Map();
+  for (const c of aplica) {
+    const e = entrada(c);
+    if (!e) estados.set(c.id, "INGRESO_PENDIENTE");
+    else if (!c.proyectoId) estados.set(c.id, "INGRESADO");
+    else {
+      const despachado = e.items.every((it) => salidas
+        .filter((s) => s.proyectoId === c.proyectoId && s.itemAlmacenId === it.itemAlmacenId && s.fecha >= e.fecha)
+        .reduce((a, s) => a + s.cantidad, 0) >= it.cantidad - TOLERANCIA);
+      estados.set(c.id, despachado ? "DESPACHADO" : "SALIDA_PENDIENTE");
+    }
+  }
+  return estados;
+}
+
+const conResumen = (c, hoy, estados) => ({
+  ...c, documento: `${c.serie}-${c.numero}`, pago: resumenPago(c, hoy), estadoAlmacen: estados?.get(c.id) ?? null,
+});
 
 // Valida el body y devuelve los datos del documento (sin usuario).
 async function prepararCuenta(body) {
@@ -154,8 +311,13 @@ async function prepararCuenta(body) {
 
   const tipoDocumento = String(body.tipoDocumento || "FACTURA").toUpperCase();
   if (!TIPOS_DOCUMENTO.includes(tipoDocumento)) throw new ErrorValidacion(`tipoDocumento debe ser uno de: ${TIPOS_DOCUMENTO.join(", ")}`);
-  const serie = String(body.serie || "").trim().toUpperCase();
-  const numero = String(body.numero || "").trim().replace(/^0+(?=\d)/, "");
+  if (REQUIEREN_RUC.includes(tipoDocumento) && proveedor.tipoDocIdentidad !== "RUC") {
+    throw new ErrorValidacion("Ese tipo de documento exige un proveedor con RUC; usa Nota de venta u Otro");
+  }
+  // Nota de venta (sin comprobante válido): serie NV y, si no trae número, uno generado.
+  const notaVenta = tipoDocumento === "NOTA_VENTA";
+  const serie = String(body.serie || (notaVenta ? "NV" : "")).trim().toUpperCase();
+  const numero = String(body.numero || (notaVenta ? `SN${Date.now().toString(36).toUpperCase()}` : "")).trim().replace(/^0+(?=\d)/, "");
   if (!/^[A-Z0-9]{1,4}$/.test(serie)) throw new ErrorValidacion("La serie debe tener de 1 a 4 caracteres (ej. F001, E001)");
   if (!/^[A-Z0-9-]{1,20}$/i.test(numero)) throw new ErrorValidacion("Indica el número del documento");
 
@@ -168,8 +330,9 @@ async function prepararCuenta(body) {
 
   const total = r2(Number(body.total));
   if (!(total > 0)) throw new ErrorValidacion("El total debe ser mayor a 0");
-  // IGV: el indicado, 0 en recibos por honorarios, o el incluido en el total.
-  const igv = body.igv !== undefined && body.igv !== "" ? r2(Number(body.igv))
+  // IGV: 0 en notas de venta y recibos por honorarios, el indicado, o el incluido en el total.
+  const igv = notaVenta ? 0
+    : body.igv !== undefined && body.igv !== "" && body.igv !== null ? r2(Number(body.igv))
     : tipoDocumento === "RECIBO_HONORARIOS" ? 0
     : r2(total - total / (1 + IGV_RATE));
   if (!(igv >= 0) || igv >= total) throw new ErrorValidacion("El IGV no es válido");
@@ -179,8 +342,11 @@ async function prepararCuenta(body) {
   const neto = r2(total - (detraccionMonto ? (moneda === "PEN" ? detraccionMonto : r2(detraccionMonto / tipoCambio)) : 0) - (retencionMonto || 0));
   if (!(neto > 0)) throw new ErrorValidacion("La detracción y la retención no pueden igualar o superar el total");
 
-  const categoria = String(body.categoria || "COMPRA").toUpperCase();
-  if (!CATEGORIAS.includes(categoria)) throw new ErrorValidacion(`categoria debe ser una de: ${CATEGORIAS.join(", ")}`);
+  // Categoría del catálogo: la indicada o la por defecto del proveedor.
+  const categoriaGastoId = await validarCategoria(
+    body.categoriaGastoId !== undefined ? body.categoriaGastoId : proveedor.categoriaGastoId,
+    body.categoriaActualId,
+  );
 
   // Crédito: cuotas explícitas, o una sola a N días (los del body o los del proveedor).
   const formaPago = String(body.formaPago || proveedor.condicionPago || "CONTADO").toUpperCase() === "CREDITO" ? "CREDITO" : "CONTADO";
@@ -219,7 +385,9 @@ async function prepararCuenta(body) {
     proveedorId, tipoDocumento, serie, numero,
     fechaEmision: fechaDia(fecha), moneda, tipoCambio,
     valorVenta: r2(total - igv), igv, total, detraccionMonto, retencionMonto,
-    categoria, descripcion: texto(body.descripcion, 500),
+    categoriaGastoId, descripcion: texto(body.descripcion, 500),
+    deducible: !notaVenta,
+    pasaPorAlmacen: body.pasaPorAlmacen === undefined ? true : !!body.pasaPorAlmacen,
     formaPago, cuotas,
     proyectoId, ordenAlmacenId, movimientoAlmacenId,
   };
@@ -243,7 +411,8 @@ exports.listarDocumentos = async (req, res) => {
       PAGADOS: (c) => c.pago.estado === "PAGADO",
       ANULADOS: (c) => c.pago.estado === "ANULADO",
     }[req.query.estado] || (() => true);
-    res.json(cuentas.map((c) => conResumen(c, hoy)).filter(filtro));
+    const estados = await estadosAlmacen(cuentas);
+    res.json(cuentas.map((c) => conResumen(c, hoy, estados)).filter(filtro));
   } catch (error) {
     responderError(res, error, "listando cuentas por pagar");
   }
@@ -253,7 +422,7 @@ exports.crearDocumento = async (req, res) => {
   try {
     const datos = await prepararCuenta(req.body);
     const c = await prisma.cuentaPorPagar.create({ data: { ...datos, usuarioId: req.user.id }, include: INCLUDE_CUENTA });
-    res.status(201).json(conResumen(c));
+    res.status(201).json(conResumen(c, undefined, await estadosAlmacen([c])));
   } catch (error) {
     if (error.code === "P2002") return res.status(409).json({ message: "Ese documento del proveedor ya está registrado" });
     responderError(res, error, "registrando cuenta por pagar");
@@ -271,12 +440,16 @@ exports.actualizarDocumento = async (req, res) => {
       ...actual,
       fechaEmision: fechaLima(actual.fechaEmision),
       ...req.body,
+      categoriaActualId: actual.categoriaGastoId,
     });
     const data = actual._count.pagos > 0
-      ? { descripcion: datos.descripcion, categoria: datos.categoria, proyectoId: datos.proyectoId, ordenAlmacenId: datos.ordenAlmacenId, movimientoAlmacenId: datos.movimientoAlmacenId }
+      ? {
+        descripcion: datos.descripcion, categoriaGastoId: datos.categoriaGastoId, pasaPorAlmacen: datos.pasaPorAlmacen,
+        proyectoId: datos.proyectoId, ordenAlmacenId: datos.ordenAlmacenId, movimientoAlmacenId: datos.movimientoAlmacenId,
+      }
       : datos;
     const c = await prisma.cuentaPorPagar.update({ where: { id }, data, include: INCLUDE_CUENTA });
-    res.json(conResumen(c));
+    res.json(conResumen(c, undefined, await estadosAlmacen([c])));
   } catch (error) {
     if (error.code === "P2002") return res.status(409).json({ message: "Ese documento del proveedor ya está registrado" });
     responderError(res, error, "actualizando cuenta por pagar");
@@ -291,7 +464,7 @@ exports.anularDocumento = async (req, res) => {
     if (!actual) throw new ErrorValidacion("Documento no encontrado", 404);
     if (actual._count.pagos > 0) throw new ErrorValidacion("Tiene pagos registrados: elimínalos primero");
     const c = await prisma.cuentaPorPagar.update({ where: { id }, data: { anulado: true }, include: INCLUDE_CUENTA });
-    res.json(conResumen(c));
+    res.json(conResumen(c, undefined, await estadosAlmacen([c])));
   } catch (error) {
     responderError(res, error, "anulando cuenta por pagar");
   }
@@ -303,8 +476,55 @@ exports.anularDocumento = async (req, res) => {
 async function cargarCuenta(id) {
   const c = await prisma.cuentaPorPagar.findUnique({ where: { id }, include: INCLUDE_CUENTA });
   if (!c) throw new ErrorValidacion("Documento no encontrado", 404);
-  return conResumen(c);
+  return conResumen(c, undefined, await estadosAlmacen([c]));
 }
+
+// POST /documentos/:id/adjuntos (multipart "archivo") — foto o PDF del documento (p. ej. nota de venta).
+exports.agregarAdjuntoDocumento = async (req, res) => {
+  try {
+    const id = Number(req.params.id);
+    if (!req.file) throw new ErrorValidacion("Adjunta una imagen o PDF");
+    if (!(await prisma.cuentaPorPagar.findUnique({ where: { id }, select: { id: true } }))) throw new ErrorValidacion("Documento no encontrado", 404);
+    const adjunto = await almacenamiento.subir(`documentos/${id}`, req.file);
+    try {
+      await prisma.adjuntoPago.create({ data: { ...adjunto, cuentaPorPagarId: id, usuarioId: req.user.id } });
+    } catch (error) {
+      await almacenamiento.borrar([adjunto.ruta]);
+      throw error;
+    }
+    res.status(201).json(await cargarCuenta(id));
+  } catch (error) {
+    responderError(res, error, "adjuntando archivo al documento");
+  }
+};
+
+const buscarAdjuntoDocumento = (req) => prisma.adjuntoPago.findFirst({
+  where: { id: Number(req.params.adjuntoId), cuentaPorPagarId: Number(req.params.id) },
+});
+
+// DELETE /documentos/:id/adjuntos/:adjuntoId
+exports.eliminarAdjuntoDocumento = async (req, res) => {
+  try {
+    const a = await buscarAdjuntoDocumento(req);
+    if (!a) throw new ErrorValidacion("Adjunto no encontrado", 404);
+    await prisma.adjuntoPago.delete({ where: { id: a.id } });
+    await almacenamiento.borrar([a.ruta]);
+    res.json(await cargarCuenta(Number(req.params.id)));
+  } catch (error) {
+    responderError(res, error, "eliminando adjunto del documento");
+  }
+};
+
+// GET /documentos/:id/adjuntos/:adjuntoId → { url } firmada por 10 minutos.
+exports.urlAdjuntoDocumento = async (req, res) => {
+  try {
+    const a = await buscarAdjuntoDocumento(req);
+    if (!a) throw new ErrorValidacion("Adjunto no encontrado", 404);
+    res.json({ url: await almacenamiento.urlFirmada(a.ruta), nombre: a.nombre, tipo: a.tipo });
+  } catch (error) {
+    responderError(res, error, "abriendo adjunto del documento");
+  }
+};
 
 exports.obtenerDocumento = async (req, res) => {
   try {
@@ -503,6 +723,7 @@ exports.resumen = async (req, res) => {
       }),
     ]);
 
+    const estados = await estadosAlmacen(cuentas);
     const filas = [];
     for (const c of cuentas) {
       const pago = resumenPago(c, hoy);
@@ -510,7 +731,9 @@ exports.resumen = async (req, res) => {
       filas.push({
         origen: "DOCUMENTO", id: c.id,
         proveedorClave: `C${c.proveedorId}`, proveedorNombre: c.proveedor.razonSocial, proveedorDoc: c.proveedor.ruc,
-        documento: `${c.serie}-${c.numero}`, tipoDocumento: c.tipoDocumento, categoria: c.categoria,
+        documento: `${c.serie}-${c.numero}`, tipoDocumento: c.tipoDocumento, categoriaGasto: c.categoriaGasto,
+        proveedorTipo: c.proveedor.tipo, afectaComercializacion: c.proveedor.afectaComercializacion,
+        deducible: c.deducible, estadoAlmacen: estados.get(c.id) ?? null,
         descripcion: c.descripcion, proyecto: c.proyecto,
         fechaEmision: fechaLima(c.fechaEmision), moneda: c.moneda, total: c.total,
         neto: pago.neto, pagado: pago.pagado, saldo: pago.saldo, saldoDetraccion: pago.saldoDetraccion,
@@ -526,7 +749,8 @@ exports.resumen = async (req, res) => {
       filas.push({
         origen: "PANEL", id: q.id,
         proveedorClave: `P${q.proveedorId}`, proveedorNombre: nombreArrendador(q.proveedor), proveedorDoc: null,
-        documento: `Cuota ${q.numero}`, tipoDocumento: "ALQUILER", categoria: "ALQUILER_PANEL",
+        documento: `Cuota ${q.numero}`, tipoDocumento: "ALQUILER", categoriaGasto: { nombre: "Alquiler de paneles", grupo: "COSTO_VENTA" },
+        proveedorTipo: "SERVICIO", afectaComercializacion: true, deducible: true, estadoAlmacen: null,
         descripcion: `Alquiler ${q.proveedor.ubicacion}${q.fecha ? ` — ${q.fecha}` : ""}`, proyecto: null,
         fechaEmision: vencimiento, moneda: "PEN", total,
         neto: total, pagado: 0, saldo: total, saldoDetraccion: 0,
@@ -555,6 +779,11 @@ exports.resumen = async (req, res) => {
     }
 
     const montos = (lista) => lista.reduce((a, f) => ({ ...a, [f.moneda]: r2((a[f.moneda] || 0) + f.saldo) }), {});
+    // Saldo por grupo: costo de venta (proveedores que afectan la comercialización) o gasto operativo.
+    const porGrupo = {
+      costoVenta: montos(filas.filter((f) => f.afectaComercializacion)),
+      gastoOperativo: montos(filas.filter((f) => !f.afectaComercializacion)),
+    };
     const vencidos = filas.filter((f) => f.diasVencido > 0);
     const porVencer = filas.filter((f) => f.vencimiento && f.vencimiento >= hoy && diasEntre(hoy, f.vencimiento) <= 7);
 
@@ -564,6 +793,7 @@ exports.resumen = async (req, res) => {
       documentos: filas.sort((a, b) => b.diasVencido - a.diasVencido || (a.vencimiento || "").localeCompare(b.vencimiento || "")),
       proveedores: [...proveedores.values()].sort((a, b) => b.diasVencidoMax - a.diasVencidoMax || b.saldo - a.saldo),
       totales,
+      porGrupo,
       detraccionPorPagar,
       alertas: {
         vencidos: { cantidad: vencidos.length, montos: montos(vencidos) },
@@ -599,7 +829,7 @@ exports.opciones = async (req, res) => {
       }),
     ]);
     res.json({
-      tiposDocumento: TIPOS_DOCUMENTO, categorias: CATEGORIAS, medios: MEDIOS_PAGO, monedas: MONEDAS,
+      tiposDocumento: TIPOS_DOCUMENTO, categorias: await arbolCategorias(), medios: MEDIOS_PAGO, monedas: MONEDAS,
       proyectos: proyectos.map((p) => ({ id: p.id, nombre: p.nombre, estado: p.estado, cliente: p.cliente?.nombreComercial || null })),
       ordenesAlmacen: ordenes.map((o) => ({
         id: o.id, fecha: fechaLima(o.fecha), notas: o.notas,
