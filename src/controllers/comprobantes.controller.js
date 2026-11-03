@@ -9,6 +9,7 @@ const { enviarComprobantePorCorreo } = require("../services/correoComprobante.se
 const { htmlAPdf } = require("../services/pdf.service");
 const comprobantePdfTemplate = require("../templates/comprobantePdf.template");
 const QRCode = require("qrcode");
+const almacenamiento = require("../services/almacenamiento.service");
 
 // Catálogos 09 (nota de crédito) y 10 (nota de débito). Los motivos "total"
 // anulan el comprobante copiando todos sus ítems; el resto lleva ítems propios
@@ -629,7 +630,12 @@ exports.listar = async (req, res) => {
       orderBy: { id: "desc" },
       take: 200,
     });
-    res.json(comprobantes.map(conCobro));
+    // Qué filas tienen XML/CDR, sin cargar su contenido (decenas de KB por fila).
+    const ids = comprobantes.map((c) => c.id);
+    const [conXml, conCdr] = await Promise.all(["xmlFirmado", "cdrXml"].map((campo) =>
+      prisma.comprobante.findMany({ where: { id: { in: ids }, [campo]: { not: null } }, select: { id: true } })
+        .then((filas) => new Set(filas.map((f) => f.id)))));
+    res.json(comprobantes.map((c) => ({ ...conCobro(c), tieneXml: conXml.has(c.id), tieneCdr: conCdr.has(c.id) })));
   } catch (error) {
     console.error("❌ Error listando comprobantes:", error);
     res.status(500).json({ message: "Error listando comprobantes", error: error.message });
@@ -677,6 +683,7 @@ exports.descargarArchivo = (campo, prefijo) => async (req, res) => {
 /* =========================
    COBROS (cuentas por cobrar)
 ========================= */
+const SELECT_ADJUNTO = { id: true, nombre: true, tipo: true, tamano: true };
 async function cargarConPagos(id) {
   return prisma.comprobante.findUnique({
     where: { id },
@@ -684,7 +691,7 @@ async function cargarConPagos(id) {
       ...SELECT_RESUMEN,
       pagos: {
         orderBy: [{ fecha: "asc" }, { id: "asc" }],
-        include: { usuario: { select: { nombre: true } } },
+        include: { usuario: { select: { nombre: true } }, adjuntos: { select: SELECT_ADJUNTO, orderBy: { id: "asc" } } },
       },
       notasCredito: NOTAS_ACEPTADAS,
     },
@@ -736,15 +743,24 @@ exports.registrarPago = async (req, res) => {
       );
     }
 
-    await prisma.pagoComprobante.create({
-      data: {
-        comprobanteId: id, tipo, monto, medio,
-        fecha: new Date(`${fecha}T12:00:00-05:00`),
-        numeroOperacion: req.body.numeroOperacion ? String(req.body.numeroOperacion).trim().slice(0, 60) || null : null,
-        nota: req.body.nota ? String(req.body.nota).trim().slice(0, 300) || null : null,
-        usuarioId: req.user.id,
-      },
-    });
+    // Constancia opcional (voucher o constancia de detracción): se sube antes y,
+    // si el pago no llega a guardarse, se borra del bucket.
+    const adjunto = req.file ? await almacenamiento.subir(`cobros/${id}`, req.file) : null;
+    try {
+      await prisma.pagoComprobante.create({
+        data: {
+          comprobanteId: id, tipo, monto, medio,
+          fecha: new Date(`${fecha}T12:00:00-05:00`),
+          numeroOperacion: req.body.numeroOperacion ? String(req.body.numeroOperacion).trim().slice(0, 60) || null : null,
+          nota: req.body.nota ? String(req.body.nota).trim().slice(0, 300) || null : null,
+          usuarioId: req.user.id,
+          ...(adjunto && { adjuntos: { create: { ...adjunto, usuarioId: req.user.id } } }),
+        },
+      });
+    } catch (error) {
+      if (adjunto) await almacenamiento.borrar([adjunto.ruta]);
+      throw error;
+    }
     res.status(201).json(respuestaPagos(await cargarConPagos(id)));
   } catch (error) {
     responderError(res, error, "registrando pago");
@@ -754,13 +770,64 @@ exports.registrarPago = async (req, res) => {
 exports.eliminarPago = async (req, res) => {
   try {
     const id = Number(req.params.id);
-    const { count } = await prisma.pagoComprobante.deleteMany({
-      where: { id: Number(req.params.pagoId), comprobanteId: id },
-    });
+    const where = { id: Number(req.params.pagoId), comprobanteId: id };
+    const adjuntos = await prisma.adjuntoPago.findMany({ where: { pagoComprobante: where }, select: { ruta: true } });
+    const { count } = await prisma.pagoComprobante.deleteMany({ where });
     if (count === 0) return res.status(404).json({ message: "Pago no encontrado" });
+    await almacenamiento.borrar(adjuntos.map((a) => a.ruta));
     res.json(respuestaPagos(await cargarConPagos(id)));
   } catch (error) {
     responderError(res, error, "eliminando pago");
+  }
+};
+
+// POST /:id/pagos/:pagoId/adjuntos (multipart "archivo") — constancia de un cobro ya registrado.
+exports.agregarAdjuntoPago = async (req, res) => {
+  try {
+    const id = Number(req.params.id);
+    const pagoId = Number(req.params.pagoId);
+    if (!req.file) throw new ErrorValidacion("Adjunta una imagen o PDF");
+    const pago = await prisma.pagoComprobante.findFirst({ where: { id: pagoId, comprobanteId: id }, select: { id: true } });
+    if (!pago) throw new ErrorValidacion("Pago no encontrado", 404);
+    const adjunto = await almacenamiento.subir(`cobros/${id}`, req.file);
+    try {
+      await prisma.adjuntoPago.create({ data: { ...adjunto, pagoComprobanteId: pagoId, usuarioId: req.user.id } });
+    } catch (error) {
+      await almacenamiento.borrar([adjunto.ruta]);
+      throw error;
+    }
+    res.status(201).json(respuestaPagos(await cargarConPagos(id)));
+  } catch (error) {
+    responderError(res, error, "adjuntando constancia");
+  }
+};
+
+// DELETE /:id/pagos/:pagoId/adjuntos/:adjuntoId
+exports.eliminarAdjuntoPago = async (req, res) => {
+  try {
+    const id = Number(req.params.id);
+    const a = await prisma.adjuntoPago.findFirst({
+      where: { id: Number(req.params.adjuntoId), pagoComprobante: { id: Number(req.params.pagoId), comprobanteId: id } },
+    });
+    if (!a) throw new ErrorValidacion("Adjunto no encontrado", 404);
+    await prisma.adjuntoPago.delete({ where: { id: a.id } });
+    await almacenamiento.borrar([a.ruta]);
+    res.json(respuestaPagos(await cargarConPagos(id)));
+  } catch (error) {
+    responderError(res, error, "eliminando constancia");
+  }
+};
+
+// GET /:id/pagos/:pagoId/adjuntos/:adjuntoId → { url } firmada por 10 minutos.
+exports.urlAdjuntoPago = async (req, res) => {
+  try {
+    const a = await prisma.adjuntoPago.findFirst({
+      where: { id: Number(req.params.adjuntoId), pagoComprobante: { id: Number(req.params.pagoId), comprobanteId: Number(req.params.id) } },
+    });
+    if (!a) throw new ErrorValidacion("Adjunto no encontrado", 404);
+    res.json({ url: await almacenamiento.urlFirmada(a.ruta), nombre: a.nombre, tipo: a.tipo });
+  } catch (error) {
+    responderError(res, error, "abriendo constancia");
   }
 };
 

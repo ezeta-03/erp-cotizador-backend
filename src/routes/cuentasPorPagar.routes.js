@@ -2,12 +2,14 @@ const router = require("express").Router();
 const auth = require("../middlewares/auth.middleware");
 const allowRoles = require("../middlewares/role.middleware");
 const controller = require("../controllers/cuentasPorPagar.controller");
+const adjunto = require("../middlewares/adjunto.middleware");
 
 // Cuentas por pagar: solo ADMIN y CONTABLE.
 const roles = allowRoles("ADMIN", "CONTABLE");
 
 router.get("/", auth, roles, controller.resumen);
 router.get("/opciones", auth, roles, controller.opciones);
+router.get("/alertas", auth, roles, controller.alertas);
 // Proveedores de compras y servicios (no los arrendadores de paneles)
 router.get("/proveedores", auth, roles, controller.listarProveedores);
 router.post("/proveedores", auth, roles, controller.crearProveedor);
@@ -18,7 +20,10 @@ router.post("/documentos", auth, roles, controller.crearDocumento);
 router.get("/documentos/:id", auth, roles, controller.obtenerDocumento);
 router.put("/documentos/:id", auth, roles, controller.actualizarDocumento);
 router.post("/documentos/:id/anular", auth, roles, controller.anularDocumento);
-router.post("/documentos/:id/pagos", auth, roles, controller.registrarPago);
+router.post("/documentos/:id/pagos", auth, roles, adjunto, controller.registrarPago);
+router.post("/documentos/:id/pagos/:pagoId/adjuntos", auth, roles, adjunto, controller.agregarAdjuntoPago);
+router.get("/documentos/:id/pagos/:pagoId/adjuntos/:adjuntoId", auth, roles, controller.urlAdjuntoPago);
+router.delete("/documentos/:id/pagos/:pagoId/adjuntos/:adjuntoId", auth, roles, controller.eliminarAdjuntoPago);
 router.delete("/documentos/:id/pagos/:pagoId", auth, roles, controller.eliminarPago);
 // Cuotas de alquiler de paneles
 router.post("/cuotas-paneles/:id/pagar", auth, roles, controller.pagarCuotaPanel);

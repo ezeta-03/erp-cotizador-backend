@@ -63,4 +63,17 @@ function sumarTramos(a, b) {
   return a;
 }
 
-module.exports = { TRAMOS, tramosVacios, cronograma, antiguedad, sumarTramos, diasEntre, fechaLima };
+// Plazo SUNAT para depositar una detracción: 5.º día hábil del mes siguiente
+// al de la emisión (aaaa-mm-dd). Cuenta lunes a viernes, sin feriados.
+function plazoDetraccion(fechaEmisionIso) {
+  const [anio, mes] = fechaEmisionIso.split("-").map(Number);
+  const d = new Date(Date.UTC(anio, mes, 1)); // día 1 del mes siguiente
+  let habiles = 0;
+  for (;;) {
+    const dia = d.getUTCDay();
+    if (dia !== 0 && dia !== 6 && ++habiles === 5) return d.toISOString().slice(0, 10);
+    d.setUTCDate(d.getUTCDate() + 1);
+  }
+}
+
+module.exports = { TRAMOS, tramosVacios, cronograma, antiguedad, sumarTramos, diasEntre, fechaLima, plazoDetraccion };

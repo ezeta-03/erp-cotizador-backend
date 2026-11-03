@@ -17,36 +17,37 @@ model Configuracion {
 }
 
 model Usuario {
-  id                Int           @id @default(autoincrement())
-  nombre            String
-  nombreComercial   String?
-  email             String        @unique
-  password          String?
-  role              Rol
-  activo            Boolean       @default(true)
-  activationToken   String?       @unique
-  activationExpires DateTime?
-  createdAt         DateTime      @default(now())
-  cliente                  Cliente?
-  cotizaciones             Cotizacion[]
-  metas                    MetaMensual[]
-  solicitudesMargen        SolicitudMargen[]  @relation("SolicitudesCreadas")
-  solicitudesResueltas     SolicitudMargen[]  @relation("SolicitudesResueltas")
-  cotizacionLogs           CotizacionLog[]
-  metaLogs                 MetaMensualLog[] @relation("MetaLogVendedor")
-  metaLogsCambios          MetaMensualLog[] @relation("MetaLogAdmin")
-  logsComoSujeto           UsuarioLog[]    @relation("LogsDeUsuario")
-  logsRealizados           UsuarioLog[]    @relation("LogsRealizados")
-  panelWidgets             PanelWidget[]
-  movimientosAlmacen       MovimientoAlmacen[]
-  ordenesAlmacen           OrdenAlmacen[]
-  proyectosComoGerente     Proyecto[]          @relation("ProyectoGerenteResponsable")
-  proyectosComoJefe        Proyecto[]          @relation("ProyectoJefeResponsable")
+  id                          Int                  @id @default(autoincrement())
+  nombre                      String
+  nombreComercial             String?
+  email                       String               @unique
+  password                    String?
+  role                        Rol
+  activo                      Boolean              @default(true)
+  activationToken             String?              @unique
+  activationExpires           DateTime?
+  createdAt                   DateTime             @default(now())
+  cliente                     Cliente?
+  cotizaciones                Cotizacion[]
+  metas                       MetaMensual[]
+  solicitudesMargen           SolicitudMargen[]    @relation("SolicitudesCreadas")
+  solicitudesResueltas        SolicitudMargen[]    @relation("SolicitudesResueltas")
+  cotizacionLogs              CotizacionLog[]
+  metaLogs                    MetaMensualLog[]     @relation("MetaLogVendedor")
+  metaLogsCambios             MetaMensualLog[]     @relation("MetaLogAdmin")
+  logsComoSujeto              UsuarioLog[]         @relation("LogsDeUsuario")
+  logsRealizados              UsuarioLog[]         @relation("LogsRealizados")
+  panelWidgets                PanelWidget[]
+  movimientosAlmacen          MovimientoAlmacen[]
+  ordenesAlmacen              OrdenAlmacen[]
+  proyectosComoGerente        Proyecto[]           @relation("ProyectoGerenteResponsable")
+  proyectosComoJefe           Proyecto[]           @relation("ProyectoJefeResponsable")
   solicitudesAlmacenResueltas SolicitudAlmacen[]
-  comprobantes             Comprobante[]
-  pagosComprobante         PagoComprobante[]
-  cuentasPorPagar          CuentaPorPagar[]
-  pagosCuentaPorPagar      PagoCuentaPorPagar[]
+  comprobantes                Comprobante[]
+  pagosComprobante            PagoComprobante[]
+  cuentasPorPagar             CuentaPorPagar[]
+  pagosCuentaPorPagar         PagoCuentaPorPagar[]
+  adjuntosPago                AdjuntoPago[]
 }
 
 // Acomodo personal del panel de bienvenida (bento): qué bloques tiene cada
@@ -68,28 +69,28 @@ model PanelWidget {
 }
 
 model Cliente {
-  id              Int          @id @default(autoincrement())
-  nombreComercial String
-  documento       String       @unique
-  nombreContacto  String
-  telefono        String?
-  email           String?
-  direccion       String?
-  activo          Boolean      @default(true)
+  id                 Int                 @id @default(autoincrement())
+  nombreComercial    String
+  documento          String              @unique
+  nombreContacto     String
+  telefono           String?
+  email              String?
+  direccion          String?
+  activo             Boolean             @default(true)
   // Condición de pago por defecto: CONTADO, o CREDITO a diasCredito días.
   // La cotización la hereda (y puede cambiarla) y la factura la trae precargada.
-  condicionPago   String       @default("CONTADO")
-  diasCredito     Int?
-  createdAt       DateTime     @default(now())
-  usuarioId       Int?         @unique
-  usuario         Usuario?     @relation(fields: [usuarioId], references: [id])
-  cotizaciones    Cotizacion[]
-  reservas        Reserva[]
-  solicitudesMargen SolicitudMargen[]
+  condicionPago      String              @default("CONTADO")
+  diasCredito        Int?
+  createdAt          DateTime            @default(now())
+  usuarioId          Int?                @unique
+  usuario            Usuario?            @relation(fields: [usuarioId], references: [id])
+  cotizaciones       Cotizacion[]
+  reservas           Reserva[]
+  solicitudesMargen  SolicitudMargen[]
   movimientosAlmacen MovimientoAlmacen[]
-  ordenesAlmacen    OrdenAlmacen[]
-  proyectos         Proyecto[]
-  comprobantes      Comprobante[]
+  ordenesAlmacen     OrdenAlmacen[]
+  proyectos          Proyecto[]
+  comprobantes       Comprobante[]
 }
 
 model Producto {
@@ -126,30 +127,30 @@ model ProductoAdicional {
 }
 
 model Cotizacion {
-  id                  Int              @id @default(autoincrement())
-  numero              String           @unique
-  total               Float
-  conIgv              Boolean          @default(true)
-  estado              EstadoCotizacion @default(PENDIENTE)
-  createdAt           DateTime         @default(now())
-  respondidaAt        DateTime?
-  respuestaComentario String?
-  facturadaAt         DateTime?
+  id                   Int               @id @default(autoincrement())
+  numero               String            @unique
+  total                Float
+  conIgv               Boolean           @default(true)
+  estado               EstadoCotizacion  @default(PENDIENTE)
+  createdAt            DateTime          @default(now())
+  respondidaAt         DateTime?
+  respuestaComentario  String?
+  facturadaAt          DateTime?
   // Condición de pago pactada (copiada del cliente al crearla, editable).
-  condicionPago       String           @default("CONTADO")
-  diasCredito         Int?
+  condicionPago        String            @default("CONTADO")
+  diasCredito          Int?
   proyectoExternoId    String?
   proyectoExternoError String?
-  clienteId           Int
-  usuarioId           Int
-  cliente             Cliente          @relation(fields: [clienteId], references: [id])
-  usuario             Usuario          @relation(fields: [usuarioId], references: [id])
-  items               CotizacionItem[]
-  log                 CotizacionLog[]
-  reservas            Reserva[]
-  solicitudesMargen   SolicitudMargen[]
-  proyecto            Proyecto?
-  comprobantes        Comprobante[]
+  clienteId            Int
+  usuarioId            Int
+  cliente              Cliente           @relation(fields: [clienteId], references: [id])
+  usuario              Usuario           @relation(fields: [usuarioId], references: [id])
+  items                CotizacionItem[]
+  log                  CotizacionLog[]
+  reservas             Reserva[]
+  solicitudesMargen    SolicitudMargen[]
+  proyecto             Proyecto?
+  comprobantes         Comprobante[]
 }
 
 model CotizacionLog {
@@ -273,24 +274,24 @@ enum TipoPanel {
 }
 
 model Panel {
-  id               Int            @id @default(autoincrement())
-  codigo           String         @unique
+  id               Int                  @id @default(autoincrement())
+  codigo           String               @unique
   nombre           String?
   distrito         DistritoPanel?
-  tipo             TipoPanel      @default(ESTATICO)
+  tipo             TipoPanel            @default(ESTATICO)
   ubicacion        String?
   lat              Float?
   lng              Float?
   ancho            Float?
   alto             Float?
-  costoProduccion  Float          @default(0)
-  costoInstalacion Float          @default(0)
+  costoProduccion  Float                @default(0)
+  costoInstalacion Float                @default(0)
   precioMes        Float?
-  estado           EstadoPanel    @default(LIBRE)
-  propiedad        PropiedadPanel @default(PROPIO)
-  activo           Boolean        @default(true)
-  createdAt        DateTime       @default(now())
-  updatedAt        DateTime       @updatedAt
+  estado           EstadoPanel          @default(LIBRE)
+  propiedad        PropiedadPanel       @default(PROPIO)
+  activo           Boolean              @default(true)
+  createdAt        DateTime             @default(now())
+  updatedAt        DateTime             @updatedAt
   items            CotizacionItem[]
   reservas         Reserva[]
   parametrosCosto  ParametrosCostoMupi?
@@ -313,21 +314,21 @@ model ParametrosCostoMupi {
 }
 
 model Reserva {
-  id             Int         @id @default(autoincrement())
-  panelId        Int
-  clienteId      Int?
-  cotizacionId   Int?
-  fechaInicio    DateTime
-  fechaFin       DateTime
-  precioMensual  Float?
-  estado         EstadoPanel @default(OCUPADO)
-  notas          String?
-  activo         Boolean       @default(true)
-  createdAt      DateTime      @default(now())
-  updatedAt      DateTime      @updatedAt
-  panel          Panel         @relation(fields: [panelId], references: [id])
-  cliente        Cliente?      @relation(fields: [clienteId], references: [id])
-  cotizacion     Cotizacion?   @relation(fields: [cotizacionId], references: [id])
+  id                Int                           @id @default(autoincrement())
+  panelId           Int
+  clienteId         Int?
+  cotizacionId      Int?
+  fechaInicio       DateTime
+  fechaFin          DateTime
+  precioMensual     Float?
+  estado            EstadoPanel                   @default(OCUPADO)
+  notas             String?
+  activo            Boolean                       @default(true)
+  createdAt         DateTime                      @default(now())
+  updatedAt         DateTime                      @updatedAt
+  panel             Panel                         @relation(fields: [panelId], references: [id])
+  cliente           Cliente?                      @relation(fields: [clienteId], references: [id])
+  cotizacion        Cotizacion?                   @relation(fields: [cotizacionId], references: [id])
   eventosProduccion EventoProduccionInstalacion[]
 }
 
@@ -352,7 +353,7 @@ enum EstadoCuota {
 }
 
 model Proveedor {
-  id                  Int               @id @default(autoincrement())
+  id                  Int                 @id @default(autoincrement())
   nombre              String
   ciudad              String?
   ubicacion           String
@@ -361,34 +362,34 @@ model Proveedor {
   inicio              DateTime
   fin                 DateTime
   costoMensual        Float
-  costoLuzMes         Float             @default(0)
+  costoLuzMes         Float               @default(0)
   numeroCuenta        String?
   nombreCuenta        String?
-  relevanciaComercial String            @default("ALTO")
+  relevanciaComercial String              @default("ALTO")
   razonSocial         String?
-  activo              Boolean           @default(true)
+  activo              Boolean             @default(true)
   estadoOverride      String?
-  createdAt           DateTime          @default(now())
-  updatedAt           DateTime          @updatedAt
+  createdAt           DateTime            @default(now())
+  updatedAt           DateTime            @updatedAt
   cuotas              ProveedorCuota[]
   movimientosAlmacen  MovimientoAlmacen[]
 }
 
 model ProveedorCuota {
-  id          Int         @id @default(autoincrement())
-  proveedorId Int
-  numero      Int
-  monto       Float
-  igv         Float
-  fecha       String      @default("")
-  fechaCobro  DateTime?
-  estado      EstadoCuota @default(PENDIENTE)
-  detalle     String?
+  id              Int         @id @default(autoincrement())
+  proveedorId     Int
+  numero          Int
+  monto           Float
+  igv             Float
+  fecha           String      @default("")
+  fechaCobro      DateTime?
+  estado          EstadoCuota @default(PENDIENTE)
+  detalle         String?
   // Pago registrado desde Cuentas por pagar (al cancelar la cuota).
   fechaPago       DateTime?
   medioPago       String?
   numeroOperacion String?
-  proveedor   Proveedor   @relation(fields: [proveedorId], references: [id])
+  proveedor       Proveedor   @relation(fields: [proveedorId], references: [id])
 
   @@index([proveedorId])
   @@index([fechaCobro])
@@ -468,33 +469,33 @@ enum EmpresaItemAlmacen {
 }
 
 model ItemAlmacen {
-  id            Int                 @id @default(autoincrement())
-  codigo        String              @unique
-  nombre        String
-  tipo          TipoItemAlmacen
-  empresa       EmpresaItemAlmacen  @default(BTL_OUTDOOR)
+  id                  Int                  @id @default(autoincrement())
+  codigo              String               @unique
+  nombre              String
+  tipo                TipoItemAlmacen
+  empresa             EmpresaItemAlmacen   @default(BTL_OUTDOOR)
   // Departamento dentro de la empresa (Ventas, Operaciones, Diseño, etc.),
   // tal como viene codificado en el propio código del ítem.
-  departamento  String?
-  categoria     String
-  unidad        String
-  ubicacion     String?
-  stockMinimo   Float               @default(0)
-  stockMaximo   Float               @default(0)
-  stockActual   Float               @default(0)
-  costoUnitario Float               @default(0)
+  departamento        String?
+  categoria           String
+  unidad              String
+  ubicacion           String?
+  stockMinimo         Float                @default(0)
+  stockMaximo         Float                @default(0)
+  stockActual         Float                @default(0)
+  costoUnitario       Float                @default(0)
   // Texto libre, no una relación a Proveedor: ese modelo es específico de
   // contratos de alquiler de paneles (plazo, costo mensual) y no encaja con
   // "a quién le compramos este insumo" — acá solo es un nombre de referencia.
-  proveedorNombre String?
+  proveedorNombre     String?
   // Columna "Observaciones" del Excel de inventario (estado, notas).
-  observaciones String?
-  activo        Boolean             @default(true)
-  createdAt     DateTime            @default(now())
-  updatedAt     DateTime            @updatedAt
-  movimientos   MovimientoAlmacen[]
-  ordenItems    OrdenAlmacenItem[]
-  solicitudes   SolicitudAlmacen[]
+  observaciones       String?
+  activo              Boolean              @default(true)
+  createdAt           DateTime             @default(now())
+  updatedAt           DateTime             @updatedAt
+  movimientos         MovimientoAlmacen[]
+  ordenItems          OrdenAlmacenItem[]
+  solicitudes         SolicitudAlmacen[]
   partidasPresupuesto PartidaPresupuesto[]
 
   @@index([tipo])
@@ -583,28 +584,28 @@ model OrdenAlmacenItem {
 // denormalizado y se actualiza dentro de la misma transacción que crea el
 // movimiento.
 model MovimientoAlmacen {
-  id                Int                    @id @default(autoincrement())
+  id                Int                   @id @default(autoincrement())
   tipo              TipoMovimientoAlmacen
   itemAlmacenId     Int
-  item              ItemAlmacen            @relation(fields: [itemAlmacenId], references: [id])
+  item              ItemAlmacen           @relation(fields: [itemAlmacenId], references: [id])
   cantidad          Float
   precioUnitario    Float
   precioTotal       Float
   proveedorId       Int?
-  proveedor         Proveedor?             @relation(fields: [proveedorId], references: [id])
+  proveedor         Proveedor?            @relation(fields: [proveedorId], references: [id])
   clienteId         Int?
-  cliente           Cliente?               @relation(fields: [clienteId], references: [id])
+  cliente           Cliente?              @relation(fields: [clienteId], references: [id])
   precioFacturado   Float?
   proyectoExternoId String?
   proyectoId        Int?
-  proyecto          Proyecto?              @relation(fields: [proyectoId], references: [id])
+  proyecto          Proyecto?             @relation(fields: [proyectoId], references: [id])
   usuarioId         Int
-  usuario           Usuario                @relation(fields: [usuarioId], references: [id])
+  usuario           Usuario               @relation(fields: [usuarioId], references: [id])
   notas             String?
-  fecha             DateTime               @default(now())
-  createdAt         DateTime               @default(now())
+  fecha             DateTime              @default(now())
+  createdAt         DateTime              @default(now())
   ordenId           Int?
-  orden             OrdenAlmacen?          @relation(fields: [ordenId], references: [id])
+  orden             OrdenAlmacen?         @relation(fields: [ordenId], references: [id])
   solicitud         SolicitudAlmacen?
   cuentasPorPagar   CuentaPorPagar[]
 
@@ -632,37 +633,37 @@ enum EstadoProyecto {
 // Almacén (proyectado vs. asignado), cosa que Firestore no puede ver.
 // proyectoFirestoreId guarda el id del documento hermano para poder cruzarlos.
 model Proyecto {
-  id                   Int                 @id @default(autoincrement())
+  id                   Int                  @id @default(autoincrement())
   nombre               String
   descripcion          String?
-  estado               EstadoProyecto      @default(PLANIFICACION)
+  estado               EstadoProyecto       @default(PLANIFICACION)
   // Nulo cuando el Proyecto no nació de una cotización, sino que se creó como
   // "stub" la primera vez que un proyecto de seguimiento-actividades (que no
   // pasó por el ERP) pidió insumos al Almacén — así su consumo también queda
   // registrado y comparable, aunque no tenga cliente ni cotización acá.
-  cotizacionId         Int?                @unique
-  cotizacion           Cotizacion?         @relation(fields: [cotizacionId], references: [id])
+  cotizacionId         Int?                 @unique
+  cotizacion           Cotizacion?          @relation(fields: [cotizacionId], references: [id])
   clienteId            Int?
-  cliente              Cliente?            @relation(fields: [clienteId], references: [id])
+  cliente              Cliente?             @relation(fields: [clienteId], references: [id])
   gerenteResponsableId Int?
-  gerenteResponsable   Usuario?            @relation("ProyectoGerenteResponsable", fields: [gerenteResponsableId], references: [id])
+  gerenteResponsable   Usuario?             @relation("ProyectoGerenteResponsable", fields: [gerenteResponsableId], references: [id])
   jefeResponsableId    Int?
-  jefeResponsable      Usuario?            @relation("ProyectoJefeResponsable", fields: [jefeResponsableId], references: [id])
+  jefeResponsable      Usuario?             @relation("ProyectoJefeResponsable", fields: [jefeResponsableId], references: [id])
   presupuestoEstimado  Float
   fechaInicio          DateTime
   fechaFin             DateTime
   proyectoFirestoreId  String?
-  createdAt            DateTime            @default(now())
-  updatedAt            DateTime            @updatedAt
+  createdAt            DateTime             @default(now())
+  updatedAt            DateTime             @updatedAt
   ordenes              OrdenAlmacen[]
   movimientos          MovimientoAlmacen[]
   solicitudes          SolicitudAlmacen[]
   presupuesto          PresupuestoProyecto?
   cuentasPorPagar      CuentaPorPagar[]
 
+  @@unique([proyectoFirestoreId])
   @@index([clienteId])
   @@index([estado])
-  @@unique([proyectoFirestoreId])
 }
 
 // Catálogo de partidas de la hoja "Presupuesto y control de costos — BTL &
@@ -756,65 +757,65 @@ model SerieComprobante {
 }
 
 model Comprobante {
-  id                Int               @id @default(autoincrement())
-  tipo              TipoComprobante
-  serie             String
-  correlativo       Int
-  fechaEmision      DateTime          @default(now())
-  moneda            String            @default("PEN") // PEN | USD
-  tipoCambio        Float? // venta SUNAT del día de emisión (solo USD)
+  id                    Int               @id @default(autoincrement())
+  tipo                  TipoComprobante
+  serie                 String
+  correlativo           Int
+  fechaEmision          DateTime          @default(now())
+  moneda                String            @default("PEN") // PEN | USD
+  tipoCambio            Float? // venta SUNAT del día de emisión (solo USD)
   // Receptor (copiado al emitir: el comprobante no cambia si se edita el cliente)
-  clienteTipoDoc    String // catálogo 06: 6 RUC, 1 DNI, 0 sin documento
-  clienteNumDoc     String
-  clienteNombre     String
-  clienteDireccion  String?
-  valorVenta        Float // total sin IGV
-  igv               Float
-  total             Float
+  clienteTipoDoc        String // catálogo 06: 6 RUC, 1 DNI, 0 sin documento
+  clienteNumDoc         String
+  clienteNombre         String
+  clienteDireccion      String?
+  valorVenta            Float // total sin IGV
+  igv                   Float
+  total                 Float
   // Solo notas de crédito/débito: comprobante que modifica y motivo (catálogo 09 / 10)
-  referenciaId      Int?
-  referencia        Comprobante?      @relation("NotaCredito", fields: [referenciaId], references: [id])
-  notasCredito      Comprobante[]     @relation("NotaCredito")
-  motivoCodigo      String?
-  motivoDescripcion String?
-  observacion       String?
+  referenciaId          Int?
+  referencia            Comprobante?      @relation("NotaCredito", fields: [referenciaId], references: [id])
+  notasCredito          Comprobante[]     @relation("NotaCredito")
+  motivoCodigo          String?
+  motivoDescripcion     String?
+  observacion           String?
   // Forma de pago (obligatoria en facturas): CONTADO, o CREDITO con cuotas [{ monto, fechaVencimiento }]
-  formaPago         String            @default("CONTADO")
-  cuotas            Json?
+  formaPago             String            @default("CONTADO")
+  cuotas                Json?
   // Detracción (SPOT): código de bien/servicio (catálogo 54), %, monto y cuenta del Banco de la Nación
-  detraccionCodigo     String?
-  detraccionPorcentaje Float?
-  detraccionMonto      Float?
-  detraccionCuenta     String?
+  detraccionCodigo      String?
+  detraccionPorcentaje  Float?
+  detraccionMonto       Float?
+  detraccionCuenta      String?
   // El cliente es agente de retención (retiene 3% en facturas sin detracción > S/ 700)
-  agenteRetencion   Boolean           @default(false)
+  agenteRetencion       Boolean           @default(false)
   // ERP: emitido por el PSE. EXTERNO: emitido fuera del ERP (portal SOL) y
   // registrado solo para cobrarlo; no tiene XML/CDR ni se envía a SUNAT.
-  origen            String            @default("ERP")
+  origen                String            @default("ERP")
   // Último recordatorio de pago enviado al cliente (Cuentas por cobrar)
   recordatorioEnviadoAt DateTime?
   // Último envío por correo al cliente
-  correoEnviadoA    String?
-  correoEnviadoAt   DateTime?
+  correoEnviadoA        String?
+  correoEnviadoAt       DateTime?
   // Última consulta de validez en SUNAT (vía Migo)
-  validacionSunat   Json?
-  validadoAt        DateTime?
-  estado            EstadoComprobante @default(PENDIENTE)
-  sunatCodigo       String?
-  sunatMensaje      String?
-  hash              String?
-  xmlFirmado        String?
-  cdrXml            String?
-  cotizacionId      Int?
-  cotizacion        Cotizacion?       @relation(fields: [cotizacionId], references: [id])
-  clienteId         Int?
-  cliente           Cliente?          @relation(fields: [clienteId], references: [id])
-  usuarioId         Int
-  usuario           Usuario           @relation(fields: [usuarioId], references: [id])
-  items             ComprobanteItem[]
-  pagos             PagoComprobante[]
-  createdAt         DateTime          @default(now())
-  updatedAt         DateTime          @updatedAt
+  validacionSunat       Json?
+  validadoAt            DateTime?
+  estado                EstadoComprobante @default(PENDIENTE)
+  sunatCodigo           String?
+  sunatMensaje          String?
+  hash                  String?
+  xmlFirmado            String?
+  cdrXml                String?
+  cotizacionId          Int?
+  cotizacion            Cotizacion?       @relation(fields: [cotizacionId], references: [id])
+  clienteId             Int?
+  cliente               Cliente?          @relation(fields: [clienteId], references: [id])
+  usuarioId             Int
+  usuario               Usuario           @relation(fields: [usuarioId], references: [id])
+  items                 ComprobanteItem[]
+  pagos                 PagoComprobante[]
+  createdAt             DateTime          @default(now())
+  updatedAt             DateTime          @updatedAt
 
   @@unique([serie, correlativo])
   @@index([cotizacionId])
@@ -841,18 +842,19 @@ model ComprobanteItem {
 // detracciones del Banco de la Nación. RETENCION: 3% que retiene un cliente agente
 // de retención (numeroOperacion = n.° del comprobante de retención).
 model PagoComprobante {
-  id               Int         @id @default(autoincrement())
-  comprobanteId    Int
-  comprobante      Comprobante @relation(fields: [comprobanteId], references: [id], onDelete: Cascade)
-  tipo             String      @default("COBRO") // COBRO | DETRACCION | RETENCION
-  fecha            DateTime
-  monto            Float
-  medio            String // TRANSFERENCIA | DEPOSITO | EFECTIVO | YAPE_PLIN | CHEQUE | OTRO
-  numeroOperacion  String?
-  nota             String?
-  usuarioId        Int
-  usuario          Usuario     @relation(fields: [usuarioId], references: [id])
-  createdAt        DateTime    @default(now())
+  id              Int           @id @default(autoincrement())
+  comprobanteId   Int
+  comprobante     Comprobante   @relation(fields: [comprobanteId], references: [id], onDelete: Cascade)
+  tipo            String        @default("COBRO") // COBRO | DETRACCION | RETENCION
+  fecha           DateTime
+  monto           Float
+  medio           String // TRANSFERENCIA | DEPOSITO | EFECTIVO | YAPE_PLIN | CHEQUE | OTRO
+  numeroOperacion String?
+  nota            String?
+  usuarioId       Int
+  usuario         Usuario       @relation(fields: [usuarioId], references: [id])
+  adjuntos        AdjuntoPago[]
+  createdAt       DateTime      @default(now())
 
   @@index([comprobanteId])
 }
@@ -887,38 +889,38 @@ model ProveedorCompra {
 // movimiento suelto) y/o a un proyecto: así el gasto real del proyecto sale de
 // las facturas de sus proveedores.
 model CuentaPorPagar {
-  id                Int                  @id @default(autoincrement())
-  proveedorId       Int
-  proveedor         ProveedorCompra      @relation(fields: [proveedorId], references: [id])
-  tipoDocumento     String               @default("FACTURA") // FACTURA | RECIBO_HONORARIOS | BOLETA | NOTA_DEBITO | OTRO
-  serie             String
-  numero            String
-  fechaEmision      DateTime
-  moneda            String               @default("PEN")
-  tipoCambio        Float?
-  valorVenta        Float // base sin IGV
-  igv               Float
-  total             Float
+  id                  Int                  @id @default(autoincrement())
+  proveedorId         Int
+  proveedor           ProveedorCompra      @relation(fields: [proveedorId], references: [id])
+  tipoDocumento       String               @default("FACTURA") // FACTURA | RECIBO_HONORARIOS | BOLETA | NOTA_DEBITO | OTRO
+  serie               String
+  numero              String
+  fechaEmision        DateTime
+  moneda              String               @default("PEN")
+  tipoCambio          Float?
+  valorVenta          Float // base sin IGV
+  igv                 Float
+  total               Float
   // Detracción que la empresa deposita en la cuenta del proveedor en el Banco
   // de la Nación (en soles) y retención (p. ej. 8% de 4ta categoría en RH).
-  detraccionMonto   Float?
-  retencionMonto    Float?
-  categoria         String               @default("COMPRA") // COMPRA | SERVICIO | GASTO_PROYECTO | OTRO
-  descripcion       String?
-  formaPago         String               @default("CONTADO")
-  cuotas            Json? // [{ monto, fechaVencimiento }] en crédito; contado vence en la emisión
-  proyectoId        Int?
-  proyecto          Proyecto?            @relation(fields: [proyectoId], references: [id])
-  ordenAlmacenId    Int?
-  ordenAlmacen      OrdenAlmacen?        @relation(fields: [ordenAlmacenId], references: [id])
+  detraccionMonto     Float?
+  retencionMonto      Float?
+  categoria           String               @default("COMPRA") // COMPRA | SERVICIO | GASTO_PROYECTO | OTRO
+  descripcion         String?
+  formaPago           String               @default("CONTADO")
+  cuotas              Json? // [{ monto, fechaVencimiento }] en crédito; contado vence en la emisión
+  proyectoId          Int?
+  proyecto            Proyecto?            @relation(fields: [proyectoId], references: [id])
+  ordenAlmacenId      Int?
+  ordenAlmacen        OrdenAlmacen?        @relation(fields: [ordenAlmacenId], references: [id])
   movimientoAlmacenId Int?
-  movimientoAlmacen MovimientoAlmacen?   @relation(fields: [movimientoAlmacenId], references: [id])
-  anulado           Boolean              @default(false)
-  usuarioId         Int
-  usuario           Usuario              @relation(fields: [usuarioId], references: [id])
-  pagos             PagoCuentaPorPagar[]
-  createdAt         DateTime             @default(now())
-  updatedAt         DateTime             @updatedAt
+  movimientoAlmacen   MovimientoAlmacen?   @relation(fields: [movimientoAlmacenId], references: [id])
+  anulado             Boolean              @default(false)
+  usuarioId           Int
+  usuario             Usuario              @relation(fields: [usuarioId], references: [id])
+  pagos               PagoCuentaPorPagar[]
+  createdAt           DateTime             @default(now())
+  updatedAt           DateTime             @updatedAt
 
   @@unique([proveedorId, tipoDocumento, serie, numero])
   @@index([proyectoId])
@@ -939,7 +941,29 @@ model PagoCuentaPorPagar {
   nota            String?
   usuarioId       Int
   usuario         Usuario        @relation(fields: [usuarioId], references: [id])
+  adjuntos        AdjuntoPago[]
   createdAt       DateTime       @default(now())
 
   @@index([cuentaId])
+}
+
+// Constancia de un cobro o pago (voucher, captura de Yape, constancia de
+// detracción del Banco de la Nación…): imagen o PDF guardado en Supabase
+// Storage (bucket privado); se descarga con una URL firmada temporal.
+model AdjuntoPago {
+  id                   Int                 @id @default(autoincrement())
+  ruta                 String              @unique // ruta dentro del bucket
+  nombre               String // nombre original del archivo
+  tipo                 String // MIME
+  tamano               Int
+  pagoComprobanteId    Int?
+  pagoComprobante      PagoComprobante?    @relation(fields: [pagoComprobanteId], references: [id], onDelete: Cascade)
+  pagoCuentaPorPagarId Int?
+  pagoCuentaPorPagar   PagoCuentaPorPagar? @relation(fields: [pagoCuentaPorPagarId], references: [id], onDelete: Cascade)
+  usuarioId            Int
+  usuario              Usuario             @relation(fields: [usuarioId], references: [id])
+  createdAt            DateTime            @default(now())
+
+  @@index([pagoComprobanteId])
+  @@index([pagoCuentaPorPagarId])
 }

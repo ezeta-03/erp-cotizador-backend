@@ -2,9 +2,10 @@ const prisma = require("../config/prisma");
 const { IGV_RATE } = require("../config/negocio");
 const migo = require("../services/migo.client");
 const { r2, hoyLima, MEDIOS_PAGO, TOLERANCIA } = require("../services/cobros.service");
-const { cronograma, antiguedad, tramosVacios, sumarTramos, diasEntre, fechaLima } = require("../services/antiguedad.service");
+const { cronograma, antiguedad, tramosVacios, sumarTramos, diasEntre, fechaLima, plazoDetraccion } = require("../services/antiguedad.service");
 const { leerCondicion } = require("../utils/condicionPago");
 const { sincronizarEstadoContrato } = require("./proveedores.controller");
+const almacenamiento = require("../services/almacenamiento.service");
 
 // Cuentas por pagar: documentos de proveedores de compras (facturas, recibos
 // por honorarios…) y las cuotas de alquiler de los arrendadores de paneles.
@@ -113,7 +114,10 @@ const INCLUDE_CUENTA = {
   proyecto: { select: { id: true, nombre: true } },
   ordenAlmacen: { select: { id: true, fecha: true, notas: true } },
   movimientoAlmacen: { select: { id: true, fecha: true, cantidad: true, item: { select: { codigo: true, nombre: true } } } },
-  pagos: { orderBy: [{ fecha: "asc" }, { id: "asc" }], include: { usuario: { select: { nombre: true } } } },
+  pagos: {
+    orderBy: [{ fecha: "asc" }, { id: "asc" }],
+    include: { usuario: { select: { nombre: true } }, adjuntos: { select: { id: true, nombre: true, tipo: true, tamano: true }, orderBy: { id: "asc" } } },
+  },
 };
 
 // La detracción se registra en soles; en un documento en dólares se convierte con su tipo de cambio.
@@ -330,14 +334,22 @@ exports.registrarPago = async (req, res) => {
       throw new ErrorValidacion(`El monto supera lo pendiente${tipo === "DETRACCION" ? " de detracción (S/)" : ""}: ${pendiente.toFixed(2)}`);
     }
 
-    await prisma.pagoCuentaPorPagar.create({
-      data: {
-        cuentaId: id, tipo, monto, medio, fecha: fechaDia(fecha),
-        numeroOperacion: texto(req.body.numeroOperacion, 60),
-        nota: texto(req.body.nota),
-        usuarioId: req.user.id,
-      },
-    });
+    // Constancia opcional: se sube antes y, si el pago no se guarda, se borra del bucket.
+    const adjunto = req.file ? await almacenamiento.subir(`pagos/${id}`, req.file) : null;
+    try {
+      await prisma.pagoCuentaPorPagar.create({
+        data: {
+          cuentaId: id, tipo, monto, medio, fecha: fechaDia(fecha),
+          numeroOperacion: texto(req.body.numeroOperacion, 60),
+          nota: texto(req.body.nota),
+          usuarioId: req.user.id,
+          ...(adjunto && { adjuntos: { create: { ...adjunto, usuarioId: req.user.id } } }),
+        },
+      });
+    } catch (error) {
+      if (adjunto) await almacenamiento.borrar([adjunto.ruta]);
+      throw error;
+    }
     res.status(201).json(await cargarCuenta(id));
   } catch (error) {
     responderError(res, error, "registrando pago");
@@ -347,11 +359,64 @@ exports.registrarPago = async (req, res) => {
 exports.eliminarPago = async (req, res) => {
   try {
     const id = Number(req.params.id);
-    const { count } = await prisma.pagoCuentaPorPagar.deleteMany({ where: { id: Number(req.params.pagoId), cuentaId: id } });
+    const where = { id: Number(req.params.pagoId), cuentaId: id };
+    const adjuntos = await prisma.adjuntoPago.findMany({ where: { pagoCuentaPorPagar: where }, select: { ruta: true } });
+    const { count } = await prisma.pagoCuentaPorPagar.deleteMany({ where });
     if (count === 0) throw new ErrorValidacion("Pago no encontrado", 404);
+    await almacenamiento.borrar(adjuntos.map((a) => a.ruta));
     res.json(await cargarCuenta(id));
   } catch (error) {
     responderError(res, error, "eliminando pago");
+  }
+};
+
+// Adjunto de un pago de este documento (o null).
+const buscarAdjunto = (req) => prisma.adjuntoPago.findFirst({
+  where: { id: Number(req.params.adjuntoId), pagoCuentaPorPagar: { id: Number(req.params.pagoId), cuentaId: Number(req.params.id) } },
+});
+
+// POST /documentos/:id/pagos/:pagoId/adjuntos (multipart "archivo")
+exports.agregarAdjuntoPago = async (req, res) => {
+  try {
+    const id = Number(req.params.id);
+    const pagoId = Number(req.params.pagoId);
+    if (!req.file) throw new ErrorValidacion("Adjunta una imagen o PDF");
+    const pago = await prisma.pagoCuentaPorPagar.findFirst({ where: { id: pagoId, cuentaId: id }, select: { id: true } });
+    if (!pago) throw new ErrorValidacion("Pago no encontrado", 404);
+    const adjunto = await almacenamiento.subir(`pagos/${id}`, req.file);
+    try {
+      await prisma.adjuntoPago.create({ data: { ...adjunto, pagoCuentaPorPagarId: pagoId, usuarioId: req.user.id } });
+    } catch (error) {
+      await almacenamiento.borrar([adjunto.ruta]);
+      throw error;
+    }
+    res.status(201).json(await cargarCuenta(id));
+  } catch (error) {
+    responderError(res, error, "adjuntando constancia");
+  }
+};
+
+// DELETE /documentos/:id/pagos/:pagoId/adjuntos/:adjuntoId
+exports.eliminarAdjuntoPago = async (req, res) => {
+  try {
+    const a = await buscarAdjunto(req);
+    if (!a) throw new ErrorValidacion("Adjunto no encontrado", 404);
+    await prisma.adjuntoPago.delete({ where: { id: a.id } });
+    await almacenamiento.borrar([a.ruta]);
+    res.json(await cargarCuenta(Number(req.params.id)));
+  } catch (error) {
+    responderError(res, error, "eliminando constancia");
+  }
+};
+
+// GET /documentos/:id/pagos/:pagoId/adjuntos/:adjuntoId → { url } firmada por 10 minutos.
+exports.urlAdjuntoPago = async (req, res) => {
+  try {
+    const a = await buscarAdjunto(req);
+    if (!a) throw new ErrorValidacion("Adjunto no encontrado", 404);
+    res.json({ url: await almacenamiento.urlFirmada(a.ruta), nombre: a.nombre, tipo: a.tipo });
+  } catch (error) {
+    responderError(res, error, "abriendo constancia");
   }
 };
 
@@ -396,6 +461,33 @@ exports.revertirCuotaPanel = async (req, res) => {
 };
 
 /* =========================
+   ALERTAS para el Dashboard: detracciones que la empresa debe depositar en la
+   cuenta del proveedor (Banco de la Nación), vencidas o que vencen en 7 días.
+   GET /alertas → { detracciones: [{ id, numero, nombre, saldo, plazo, dias }] }
+========================= */
+exports.alertas = async (req, res) => {
+  try {
+    const hoy = hoyLima();
+    const cuentas = await prisma.cuentaPorPagar.findMany({
+      where: { anulado: false, detraccionMonto: { gt: 0 } },
+      include: INCLUDE_CUENTA,
+    });
+    const detracciones = [];
+    for (const c of cuentas) {
+      const pago = resumenPago(c, hoy);
+      if (!(pago.saldoDetraccion > 0)) continue;
+      const plazo = plazoDetraccion(fechaLima(c.fechaEmision));
+      const dias = diasEntre(hoy, plazo);
+      if (dias > 7) continue;
+      detracciones.push({ id: c.id, numero: `${c.serie}-${c.numero}`, nombre: c.proveedor.razonSocial, saldo: pago.saldoDetraccion, plazo, dias });
+    }
+    res.json({ detracciones: detracciones.sort((a, b) => a.dias - b.dias) });
+  } catch (error) {
+    responderError(res, error, "cargando alertas de pago");
+  }
+};
+
+/* =========================
    CARTERA: documentos abiertos + cuotas de paneles, con antigüedad
    GET /  → { hoy, documentos, proveedores, totales, alertas }
 ========================= */
@@ -422,6 +514,7 @@ exports.resumen = async (req, res) => {
         descripcion: c.descripcion, proyecto: c.proyecto,
         fechaEmision: fechaLima(c.fechaEmision), moneda: c.moneda, total: c.total,
         neto: pago.neto, pagado: pago.pagado, saldo: pago.saldo, saldoDetraccion: pago.saldoDetraccion,
+        plazoDetraccion: pago.saldoDetraccion > 0 ? plazoDetraccion(fechaLima(c.fechaEmision)) : null,
         estado: pago.estado, vencimiento: pago.vencimiento, diasVencido: pago.diasVencido, tramos: pago.tramos,
       });
     }

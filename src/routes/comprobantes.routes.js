@@ -3,6 +3,7 @@ const auth = require("../middlewares/auth.middleware");
 const allowRoles = require("../middlewares/role.middleware");
 const controller = require("../controllers/comprobantes.controller");
 const multer = require("multer");
+const adjunto = require("../middlewares/adjunto.middleware");
 
 const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 5 * 1024 * 1024 } });
 
@@ -26,7 +27,10 @@ router.delete("/externos/:id", auth, roles, controller.eliminarExterno);
 router.get("/:id", auth, roles, controller.obtener);
 // Cobros (cuentas por cobrar)
 router.get("/:id/pagos", auth, roles, controller.listarPagos);
-router.post("/:id/pagos", auth, roles, controller.registrarPago);
+router.post("/:id/pagos", auth, roles, adjunto, controller.registrarPago);
+router.post("/:id/pagos/:pagoId/adjuntos", auth, roles, adjunto, controller.agregarAdjuntoPago);
+router.get("/:id/pagos/:pagoId/adjuntos/:adjuntoId", auth, roles, controller.urlAdjuntoPago);
+router.delete("/:id/pagos/:pagoId/adjuntos/:adjuntoId", auth, roles, controller.eliminarAdjuntoPago);
 router.delete("/:id/pagos/:pagoId", auth, roles, controller.eliminarPago);
 router.post("/:id/verificar", auth, roles, controller.verificarEnSunat);
 router.post("/:id/nota-credito", auth, roles, controller.emitirNota("NOTA_CREDITO"));

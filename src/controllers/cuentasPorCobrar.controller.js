@@ -3,7 +3,7 @@ const XLSX = require("xlsx");
 const { emisor } = require("../config/emisor");
 const { numeroDocumento } = require("../services/sunat/ubl");
 const { resumenCobro, r2, hoyLima } = require("../services/cobros.service");
-const { cronograma, antiguedad, tramosVacios, sumarTramos, diasEntre, fechaLima } = require("../services/antiguedad.service");
+const { cronograma, antiguedad, tramosVacios, sumarTramos, diasEntre, fechaLima, plazoDetraccion } = require("../services/antiguedad.service");
 const { enviarRecordatorioCobro } = require("../services/correoComprobante.service");
 
 // Cuentas por cobrar: facturas y boletas aceptadas (emitidas en el ERP o
@@ -48,12 +48,18 @@ function enCartera(c, hoy) {
   const cuotas = cronograma({ formaPago: c.formaPago, cuotas: c.cuotas, fechaEmision: c.fechaEmision, monto: cobro.netoCliente });
   const abierto = ABIERTOS.includes(cobro.estado);
   const { tramos, vencimiento, diasVencido } = abierto ? antiguedad(cuotas, cobro.saldo, hoy) : { tramos: tramosVacios(), vencimiento: null, diasVencido: 0 };
+  // Detracción que el cliente aún no deposita, con el plazo SUNAT.
+  const fechaEmision = fechaLima(c.fechaEmision);
+  const plazo = cobro.saldoDetraccion > 0 && cobro.estado !== "ANULADO" ? plazoDetraccion(fechaEmision) : null;
+  const cobros = c.pagos.filter((p) => p.tipo === "COBRO");
   return {
     id: c.id, tipo: c.tipo, origen: c.origen, numero: numeroDocumento(c.serie, c.correlativo),
-    fechaEmision: fechaLima(c.fechaEmision), moneda: c.moneda, total: c.total, formaPago: c.formaPago,
+    fechaEmision, moneda: c.moneda, total: c.total, formaPago: c.formaPago,
     clienteId: c.clienteId, clienteNumDoc: c.clienteNumDoc, clienteNombre: c.clienteNombre, clienteEmail: c.cliente?.email || null,
     recordatorioEnviadoAt: c.recordatorioEnviadoAt,
     cobro, abierto, tramos, vencimiento, diasVencido,
+    detraccion: plazo && { saldo: cobro.saldoDetraccion, plazo, dias: diasEntre(hoy, plazo) },
+    ultimoCobro: cobros.length ? fechaLima(cobros[cobros.length - 1].fecha) : null,
   };
 }
 
@@ -125,10 +131,48 @@ exports.alertas = async (req, res) => {
       .map(({ id, numero, clienteNombre, moneda, cobro, vencimiento, diasVencido }) => ({
         id, numero, clienteNombre, moneda, saldo: cobro.saldo, vencimiento, diasVencido,
       }));
-    res.json({ ...alertas, urgentes });
+    // Detracciones que los clientes no han depositado: las vencidas y las que vencen en 7 días.
+    const detracciones = documentos
+      .filter((d) => d.detraccion && d.detraccion.dias <= 7)
+      .sort((a, b) => a.detraccion.dias - b.detraccion.dias)
+      .map(({ id, numero, clienteNombre, detraccion }) => ({ id, numero, nombre: clienteNombre, ...detraccion }));
+    res.json({ ...alertas, urgentes, detracciones });
   } catch (error) {
     console.error("❌ Error cargando alertas de cobro:", error);
     res.status(500).json({ message: "Error cargando alertas de cobro", error: error.message });
+  }
+};
+
+/* =========================
+   HISTORIAL: todos los comprobantes (también pagados y anulados)
+   GET /historial?estado=PAGADO|POR_COBRAR|VENCIDO|DETRACCION|ANULADO&desde&hasta
+========================= */
+const FILTROS_HISTORIAL = {
+  PAGADO: (d) => d.cobro.estado === "PAGADO",
+  POR_COBRAR: (d) => d.abierto,
+  VENCIDO: (d) => d.diasVencido > 0,
+  DETRACCION: (d) => !!d.detraccion,
+  ANULADO: (d) => d.cobro.estado === "ANULADO",
+};
+
+exports.historial = async (req, res) => {
+  try {
+    const { estado, desde, hasta } = req.query;
+    const fecha = (v) => (/^\d{4}-\d{2}-\d{2}$/.test(v || "") ? v : null);
+    const where = {};
+    if (fecha(desde)) where.fechaEmision = { gte: new Date(`${desde}T00:00:00-05:00`) };
+    if (fecha(hasta)) where.fechaEmision = { ...where.fechaEmision, lte: new Date(`${hasta}T23:59:59-05:00`) };
+    const hoy = hoyLima();
+    const filtro = FILTROS_HISTORIAL[estado] || (() => true);
+    const documentos = (await cargarComprobantes(where))
+      .map((c) => enCartera(c, hoy))
+      .filter((d) => d && filtro(d))
+      .sort((a, b) => b.fechaEmision.localeCompare(a.fechaEmision) || b.id - a.id)
+      .slice(0, 500);
+    res.json(documentos);
+  } catch (error) {
+    console.error("❌ Error cargando historial de cobros:", error);
+    res.status(500).json({ message: "Error cargando historial de cobros", error: error.message });
   }
 };
 
