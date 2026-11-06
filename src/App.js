@@ -4,6 +4,14 @@ const cors = require("cors");
 const app = express();
 app.disable('etag'); // evita 304 Not Modified con datos obsoletos
 
+// Render pone un proxy delante: sin esto req.ip sería la IP del proxy y el
+// límite por IP de las rutas públicas no funcionaría.
+app.set("trust proxy", 1);
+
+// Marketplace: solo consulta de RUC/DNI, con su propio CORS. Va antes del CORS
+// general para que el dominio del marketplace no llegue a ninguna otra ruta.
+app.use("/api/publico", require("./routes/publico.routes"));
+
 const allowedOrigins = [
   process.env.FRONTEND_URL,
   "https://erp.zaazmagoholding.com",
