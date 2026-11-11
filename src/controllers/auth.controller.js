@@ -32,7 +32,7 @@ exports.login = async (req, res) => {
 
     // 👇 incluye nombre, email y role en el payload
     const token = jwt.sign(
-      { id: user.id, nombre: user.nombre, role: user.role, email: user.email },
+      { id: user.id, nombre: user.nombre, role: user.role, email: user.email, marca: user.marca },
       process.env.JWT_SECRET,
       { expiresIn: "8h" }
     );
@@ -45,6 +45,7 @@ exports.login = async (req, res) => {
         nombre: user.nombre,
         role: user.role,
         email: user.email,
+        marca: user.marca,
       },
     });
   } catch (error) {
@@ -125,6 +126,7 @@ exports.me = async (req, res) => {
         role: true,
         email: true,
         activo: true,
+        marca: true,
       },
     });
 

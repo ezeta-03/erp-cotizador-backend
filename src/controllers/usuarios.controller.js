@@ -3,6 +3,8 @@ const bcrypt = require("bcryptjs");
 const crypto = require("crypto");
 const { sendActivationEmail } = require("../services/mail.service");
 
+const MARCAS = ["ZAAZMAGO", "NETWISE"];
+
 const generarToken = () => {
   const token = crypto.randomUUID();
   const expires = new Date();
@@ -15,6 +17,7 @@ const selectPublico = {
   nombre: true,
   email: true,
   role: true,
+  marca: true,
   activo: true,
   activationToken: true,
   createdAt: true,
@@ -23,7 +26,7 @@ const selectPublico = {
 // ── Crear usuario interno (ADMIN / VENTAS / CONTABLE) ────────────────────────
 exports.crear = async (req, res) => {
   try {
-    const { nombre, email, role } = req.body;
+    const { nombre, email, role, marca } = req.body;
 
     if (!nombre || !email || !role) {
       return res.status(400).json({ message: "nombre, email y rol son obligatorios" });
@@ -31,6 +34,10 @@ exports.crear = async (req, res) => {
 
     if (role === "CLIENTE") {
       return res.status(400).json({ message: "Los clientes se gestionan desde la sección Clientes" });
+    }
+
+    if (marca !== undefined && !MARCAS.includes(marca)) {
+      return res.status(400).json({ message: "Marca no válida" });
     }
 
     const existe = await prisma.usuario.findUnique({ where: { email } });
@@ -45,6 +52,7 @@ exports.crear = async (req, res) => {
         nombre,
         email,
         role,
+        ...(marca && { marca }),
         activo: false,
         activationToken: token,
         activationExpires: expires,
@@ -87,13 +95,16 @@ exports.listar = async (req, res) => {
 exports.actualizar = async (req, res) => {
   try {
     const id = Number(req.params.id);
-    const { nombre, email, password, role } = req.body;
+    const { nombre, email, password, role, marca } = req.body;
 
     if (role === "CLIENTE") {
       return res.status(400).json({ message: "Los clientes se gestionan desde la sección Clientes" });
     }
+    if (marca !== undefined && !MARCAS.includes(marca)) {
+      return res.status(400).json({ message: "Marca no válida" });
+    }
 
-    const data = { nombre, email, role };
+    const data = { nombre, email, role, ...(marca && { marca }) };
 
     if (password) {
       data.password = await bcrypt.hash(password, 10);

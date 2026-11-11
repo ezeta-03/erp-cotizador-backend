@@ -23,6 +23,7 @@ model Usuario {
   email                       String               @unique
   password                    String?
   role                        Rol
+  marca                       Marca                @default(ZAAZMAGO)
   activo                      Boolean              @default(true)
   activationToken             String?              @unique
   activationExpires           DateTime?
@@ -241,6 +242,13 @@ enum Rol {
   VENTAS
   CLIENTE
   CONTABLE
+}
+
+// Marca con la que se muestra la interfaz al usuario (mismos datos y
+// funciones; solo cambia la apariencia).
+enum Marca {
+  ZAAZMAGO
+  NETWISE
 }
 
 enum EstadoCotizacion {

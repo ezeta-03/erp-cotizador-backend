@@ -76,3 +76,9 @@
 2. Copia el token del response
 3. Prueba `GET /api/dashboard` para ver estadísticas
 4. Prueba `GET /api/cotizaciones` para ver todas las cotizaciones
+
+### 🟣 Netwise (solo base local)
+- **Email:** `netwise@demo.com`
+- **Password:** `123456`
+- **Rol:** CONTABLE · **Marca:** NETWISE
+- **Descripción:** Mismo acceso que Contabilidad, con la interfaz de Netwise (morado, Poppins). Se crea con `node scripts/crear-usuario-netwise.js <email> <contraseña>`.
