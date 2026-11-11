@@ -14,6 +14,10 @@ router.get("/alertas", auth, roles, controller.alertas);
 router.get("/categorias", auth, roles, controller.listarCategorias);
 router.post("/categorias", auth, roles, controller.crearCategoria);
 router.put("/categorias/:id", auth, roles, controller.actualizarCategoria);
+// Líneas de negocio (reparto de gastos de proveedores)
+router.get("/lineas-negocio", auth, roles, controller.listarLineas);
+router.post("/lineas-negocio", auth, roles, controller.crearLinea);
+router.put("/lineas-negocio/:id", auth, roles, controller.actualizarLinea);
 // Proveedores de compras y servicios (no los arrendadores de paneles)
 router.get("/proveedores", auth, roles, controller.listarProveedores);
 router.post("/proveedores", auth, roles, controller.crearProveedor);

@@ -1,7 +1,18 @@
 const prisma = require("../config/prisma");
 
+// Con el precio del ítem, sus proveedores propuestos (la regla es 3, con su
+// último precio) y las órdenes de compra generadas para la solicitud.
 const SOLICITUD_INCLUDE = {
-  item: { select: { id: true, codigo: true, nombre: true, unidad: true, stockActual: true, empresa: true } },
+  item: {
+    select: {
+      id: true, codigo: true, nombre: true, unidad: true, stockActual: true, empresa: true, costoUnitario: true,
+      proveedores: {
+        select: { proveedorId: true, precio: true, moneda: true, fechaPrecio: true, proveedor: { select: { razonSocial: true } } },
+        orderBy: { precio: "asc" },
+      },
+    },
+  },
+  ordenCompraItems: { select: { ordenCompra: { select: { id: true, numero: true, estado: true } } } },
   proyecto: { select: { id: true, nombre: true } },
   resueltoPor: { select: { id: true, nombre: true } },
 };

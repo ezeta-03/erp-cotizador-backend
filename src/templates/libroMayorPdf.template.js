@@ -94,8 +94,20 @@ function metricas({ totales, resultadoPeriodo, cuentas, hasta }) {
     </section>`;
 }
 
-module.exports = function libroMayorPdf({ desde, hasta, cuentas, totales, resultadoPeriodo, empresa, ruc }) {
+const esGasto = (c) => c.grupo === "COSTO_VENTA" || c.grupo === "GASTO_OPERATIVO";
+const CONCILIADO = (v) => (v === true ? "Sí" : v === false ? `<span class="neg b">No</span>` : "—");
+
+module.exports = function libroMayorPdf({ desde, hasta, cuentas, totales, resultadoPeriodo, empresa, ruc, conciliacion, porLinea = [] }) {
   const logo = logoDataUrl();
+  const lineas = porLinea.length ? `
+    <h2 class="seccion">Gasto por línea de negocio</h2>
+    <table>
+      <thead><tr><th>Línea de negocio</th><th class="n">Monto</th><th class="n">%</th></tr></thead>
+      <tbody>${porLinea.map((l, i) => `
+        <tr class="${i % 2 ? "z" : ""}"><td>${esc(l.nombre)}</td><td class="n">${mon("PEN", l.monto)}</td><td class="n">${l.porcentaje.toFixed(1)}%</td></tr>`).join("")}
+      </tbody>
+    </table>
+    <div class="kpi-n">Gasto del periodo (base sin IGV) repartido según los % de cada proveedor.</div>` : "";
   const resumen = cuentas.map((c, i) => `
     <tr class="${i % 2 ? "z" : ""}">
       <td><span class="grupo" style="color:${GRUPO_COLOR[c.grupo]}">●</span> ${esc(GRUPO_LABEL[c.grupo])}</td><td>${esc(c.nombre)}</td>
@@ -103,23 +115,24 @@ module.exports = function libroMayorPdf({ desde, hasta, cuentas, totales, result
       <td class="n">${num(c.haber)}</td><td class="n b">${mon(c.moneda, c.saldoFinal)}</td>
     </tr>`).join("");
 
-  const detalle = cuentas.map((c) => `
+  const detalle = cuentas.map((c) => { const g = esGasto(c); return `
     <section class="cuenta">
       <h2 style="border-left-color:${GRUPO_COLOR[c.grupo]}">${esc(c.nombre)}
         <span>${esc(GRUPO_LABEL[c.grupo])} · ${c.moneda === "USD" ? "Dólares" : "Soles"} · saldo final ${mon(c.moneda, c.saldoFinal)}</span></h2>
       <table>
-        <thead><tr><th>Fecha</th><th>Documento</th><th>Concepto</th><th>Cliente / proveedor</th><th class="n">Debe</th><th class="n">Haber</th><th class="n">Saldo</th></tr></thead>
+        <thead><tr><th>Fecha</th><th>Documento</th><th>Concepto</th><th>Cliente / proveedor</th><th class="n">Debe</th><th class="n">Haber</th><th class="n">Saldo</th>${g ? "<th>Concil.</th>" : ""}</tr></thead>
         <tbody>
-          <tr class="sub"><td></td><td></td><td>Saldo anterior</td><td></td><td></td><td></td><td class="n">${num(c.saldoAnterior) || "0.00"}</td></tr>
+          <tr class="sub"><td></td><td></td><td>Saldo anterior</td><td></td><td></td><td></td><td class="n">${num(c.saldoAnterior) || "0.00"}</td>${g ? "<td></td>" : ""}</tr>
           ${c.movimientos.map((m, i) => `
             <tr class="${i % 2 ? "z" : ""}">
               <td class="nw">${fecha(m.fecha)}</td><td class="nw">${esc(m.documento)}</td><td>${esc(m.concepto)}</td><td>${esc(m.tercero)}</td>
               <td class="n">${num(m.debe)}</td><td class="n">${num(m.haber)}</td><td class="n b">${num(m.saldo) || "0.00"}</td>
-            </tr>`).join("") || `<tr><td colspan="7" class="vacio">Sin movimientos en el periodo</td></tr>`}
-          <tr class="tot"><td></td><td></td><td>Totales del periodo</td><td></td><td class="n">${num(c.debe)}</td><td class="n">${num(c.haber)}</td><td class="n">${num(c.saldoFinal) || "0.00"}</td></tr>
+              ${g ? `<td class="nw">${CONCILIADO(m.conciliado)}</td>` : ""}
+            </tr>`).join("") || `<tr><td colspan="${g ? 8 : 7}" class="vacio">Sin movimientos en el periodo</td></tr>`}
+          <tr class="tot"><td></td><td></td><td>Totales del periodo</td><td></td><td class="n">${num(c.debe)}</td><td class="n">${num(c.haber)}</td><td class="n">${num(c.saldoFinal) || "0.00"}</td>${g ? `<td>${c.sinConciliar ? `${c.sinConciliar} sin concil.` : ""}</td>` : ""}</tr>
         </tbody>
       </table>
-    </section>`).join("");
+    </section>`; }).join("");
 
   return `<!doctype html>
 <html lang="es"><head><meta charset="utf-8"><title>Libro Mayor</title>
@@ -128,6 +141,7 @@ module.exports = function libroMayorPdf({ desde, hasta, cuentas, totales, result
   @page { size: A4; margin: 10mm 0 14mm 0; }
   @page :first { margin-top: 0; }
   * { box-sizing: border-box; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+  html, body { background: #fff; }
   body { font-family: Arial, Helvetica, sans-serif; font-size: 8.3pt; color: ${C.carbon}; margin: 0; }
   .franja { background: ${C.carbon}; color: #fff; padding: 16px 12mm 14px; display: flex; align-items: center; justify-content: space-between; border-bottom: 4px solid ${C.naranja}; }
   .franja img { height: 30px; }
@@ -193,6 +207,8 @@ module.exports = function libroMayorPdf({ desde, hasta, cuentas, totales, result
       <tbody>${resumen || `<tr><td colspan="6" class="vacio">Sin cuentas con movimientos</td></tr>`}</tbody>
     </table>
     <div class="resultado">Resultado del periodo (ventas − costo de venta − gasto operativo): <span>${mon("PEN", resultadoPeriodo)}</span></div>
+    ${conciliacion ? `<div class="kpi-n" style="text-align:right">Gastos con comprobante adjunto (conciliados): ${conciliacion.conciliados} · sin conciliar: <b class="${conciliacion.sinConciliar ? "neg" : ""}">${conciliacion.sinConciliar}</b></div>` : ""}
+    ${lineas}
 
     <h2 class="seccion">Detalle por cuenta</h2>
     ${detalle}

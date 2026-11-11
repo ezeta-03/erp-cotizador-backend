@@ -1,7 +1,7 @@
 const prisma = require("../config/prisma");
 const { r2, hoyLima } = require("../services/cobros.service");
 const { fechaLima } = require("../services/antiguedad.service");
-const { TIPOS_CUENTA, MONEDAS, movimientosDe, saldoDe } = require("../services/cajaBancos.service");
+const { TIPOS_CUENTA, MONEDAS, movimientosDe, saldoDe, cuentasParaDocumentos } = require("../services/cajaBancos.service");
 
 // Caja y Bancos: cuentas de la empresa con su saldo. Los movimientos salen de
 // los cobros (Cuentas por cobrar), pagos y cuotas de paneles (Cuentas por pagar).
@@ -16,6 +16,16 @@ const texto = (v, max = 120) => (v === undefined || v === null ? null : String(v
 const fechaValida = (v) => /^\d{4}-\d{2}-\d{2}$/.test(v || "");
 
 const conSaldo = async (c) => ({ ...c, fechaSaldoInicial: fechaLima(c.fechaSaldoInicial), ...(await saldoDe(c)) });
+
+// GET /para-documentos — cuentas que se pueden imprimir en cotizaciones y
+// comprobantes (sin saldos: también la usa Ventas).
+exports.paraDocumentos = async (req, res) => {
+  try {
+    res.json(await cuentasParaDocumentos());
+  } catch (error) {
+    responderError(res, error, "listando cuentas para documentos");
+  }
+};
 
 // GET / — cuentas (activas e inactivas) con su saldo y el total por moneda de las activas.
 exports.listar = async (req, res) => {

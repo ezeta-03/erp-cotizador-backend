@@ -1,7 +1,8 @@
 const { IGV_RATE } = require("../config/negocio");
+const cuentasPdf = require("../utils/cuentasPdf");
 
 module.exports = (cotizacion) => {
-  const { cliente, items, total, numero, createdAt, estado, conIgv: rawConIgv } = cotizacion;
+  const { cliente, items, total, numero, createdAt, estado, conIgv: rawConIgv, cuentasBancarias } = cotizacion;
 
   const conIgv = rawConIgv !== undefined ? rawConIgv : true;
 
@@ -162,6 +163,8 @@ module.exports = (cotizacion) => {
   }
   .igv-notice.con { background: #dcfce7; color: #166534; }
   .igv-notice.sin { background: #f3f4f6; color: #6b7280; }
+${cuentasPdf.estilos()}
+  .cuentas-pago { margin-top: 36px; }
 </style>
 </head>
 <body>
@@ -216,6 +219,8 @@ module.exports = (cotizacion) => {
     </div>
   </div>
 </div>
+
+${cuentasPdf(cuentasBancarias)}
 
 <div class="footer">
   <div class="footer-note">Cotización válida por 15 días hábiles desde la fecha de emisión.</div>

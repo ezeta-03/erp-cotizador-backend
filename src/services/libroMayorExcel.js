@@ -9,7 +9,9 @@ const relleno = (hex) => ({ type: "pattern", pattern: "solid", fgColor: { argb: 
 const fechaDMA = (iso) => iso.split("-").reverse().join("/");
 const formatoMoneda = (moneda) => `"${moneda === "USD" ? "US$" : "S/"}" #,##0.00;[Red]-"${moneda === "USD" ? "US$" : "S/"}" #,##0.00`;
 const borde = { style: "thin", color: { argb: argb(colores.borde) } };
-const NUMERICAS = ["Saldo anterior", "Debe", "Haber", "Saldo final", "Saldo", "Movimientos"];
+const NUMERICAS = ["Saldo anterior", "Debe", "Haber", "Saldo final", "Saldo", "Movimientos", "Monto", "%"];
+const esGasto = (c) => c.grupo === "COSTO_VENTA" || c.grupo === "GASTO_OPERATIVO";
+const CONCILIADO = (v) => (v === true ? "Sí" : v === false ? "No" : "—");
 
 const GRUPO_LABEL = { CAJA_BANCOS: "Caja y Bancos", INGRESOS: "Ingresos", COSTO_VENTA: "Costo de venta", GASTO_OPERATIVO: "Gasto operativo" };
 const GRUPO_COLOR = { CAJA_BANCOS: colores.info, INGRESOS: colores.exito, COSTO_VENTA: colores.violeta, GASTO_OPERATIVO: colores.advertencia };
@@ -157,6 +159,31 @@ async function libroMayorExcel(m, { empresa, ruc }) {
   total.values = ["", "Resultado del periodo (S/)", "", "", "", "", m.resultadoPeriodo, ""];
   filaTotal(total, [7], "PEN");
 
+  // Conciliación de gastos y reparto por línea de negocio.
+  let g = f + 3;
+  if (m.conciliacion) {
+    const c = rs.getCell(g, 1);
+    c.value = `Gastos con comprobante adjunto (conciliados): ${m.conciliacion.conciliados} · sin conciliar: ${m.conciliacion.sinConciliar}`;
+    c.font = { size: 10, bold: true, color: { argb: argb(m.conciliacion.sinConciliar ? colores.peligro : colores.exito) } };
+    rs.mergeCells(g, 1, g, 8);
+    g += 2;
+  }
+  if (m.porLinea?.length) {
+    cabecera(rs, g, ["Línea de negocio", "", "", "Monto", "%"]);
+    rs.mergeCells(g, 1, g, 3);
+    m.porLinea.forEach((l, i) => {
+      const row = rs.getRow(++g);
+      row.values = [l.nombre, "", "", l.monto, l.porcentaje / 100];
+      filaDatos(row, i % 2 === 1, [4], "PEN");
+      row.getCell(5).numFmt = "0.0%";
+      row.getCell(5).alignment = { horizontal: "right" };
+      rs.mergeCells(g, 1, g, 3);
+    });
+    const nl = rs.getCell(g + 1, 1);
+    nl.value = "Gasto del periodo (base sin IGV) repartido según los % de cada proveedor.";
+    nl.font = { size: 9, italic: true, color: { argb: argb(colores.texto3) } };
+  }
+
   /* ── Una hoja por cuenta ── */
   const usados = new Set(["resumen"]);
   for (const c of m.cuentas) {
@@ -165,14 +192,16 @@ async function libroMayorExcel(m, { empresa, ruc }) {
       pageSetup: { orientation: "landscape", fitToPage: true, fitToWidth: 1, fitToHeight: 0, paperSize: 9 },
       properties: { tabColor: { argb: argb(GRUPO_COLOR[c.grupo]) } },
     });
-    ws.columns = [{ width: 12 }, { width: 20 }, { width: 46 }, { width: 34 }, { width: 15 }, { width: 15 }, { width: 16 }];
-    encabezado(wb, ws, 7, c.nombre, subtitulo);
+    const gasto = esGasto(c);
+    const nc = gasto ? 8 : 7;
+    ws.columns = [{ width: 12 }, { width: 20 }, { width: 46 }, { width: 34 }, { width: 15 }, { width: 15 }, { width: 16 }, ...(gasto ? [{ width: 12 }] : [])];
+    encabezado(wb, ws, nc, c.nombre, subtitulo);
     const info = ws.getCell(6, 1);
     info.value = `${GRUPO_LABEL[c.grupo]} · ${c.moneda === "USD" ? "Dólares" : "Soles"} · Saldo anterior ${c.saldoAnterior.toFixed(2)} · Saldo final ${c.saldoFinal.toFixed(2)}`;
     info.font = { size: 10, bold: true, color: { argb: argb(GRUPO_COLOR[c.grupo]) } };
-    ws.mergeCells(6, 1, 6, 7);
+    ws.mergeCells(6, 1, 6, nc);
 
-    cabecera(ws, 8, ["Fecha", "Documento", "Concepto", "Cliente / proveedor", "Debe", "Haber", "Saldo"]);
+    cabecera(ws, 8, ["Fecha", "Documento", "Concepto", "Cliente / proveedor", "Debe", "Haber", "Saldo", ...(gasto ? ["Conciliado"] : [])]);
     const anterior = ws.getRow(9);
     anterior.values = ["", "", "Saldo anterior", "", null, null, c.saldoAnterior];
     filaDatos(anterior, false, [5, 6, 7], c.moneda);
@@ -180,17 +209,23 @@ async function libroMayorExcel(m, { empresa, ruc }) {
     let r = 10;
     c.movimientos.forEach((x, i) => {
       const row = ws.getRow(r++);
-      row.values = [fechaDMA(x.fecha), x.documento || "", x.concepto || "", x.tercero || "", x.debe || null, x.haber || null, x.saldo];
+      row.values = [fechaDMA(x.fecha), x.documento || "", x.concepto || "", x.tercero || "", x.debe || null, x.haber || null, x.saldo,
+        ...(gasto ? [CONCILIADO(x.conciliado)] : [])];
       filaDatos(row, i % 2 === 1, [5, 6, 7], c.moneda);
       row.getCell(7).font = { bold: true, color: { argb: argb(colores.carbon) } };
+      if (gasto) {
+        row.getCell(8).alignment = { horizontal: "center" };
+        if (x.conciliado === false) row.getCell(8).font = { bold: true, color: { argb: argb(colores.peligro) } };
+      }
     });
-    ws.autoFilter = { from: { row: 8, column: 1 }, to: { row: Math.max(r - 1, 9), column: 7 } };
+    ws.autoFilter = { from: { row: 8, column: 1 }, to: { row: Math.max(r - 1, 9), column: nc } };
     const tot = ws.getRow(r + 1);
-    tot.values = ["", "", "Totales del periodo", "", c.debe, c.haber, c.saldoFinal];
+    tot.values = ["", "", "Totales del periodo", "", c.debe, c.haber, c.saldoFinal, ...(gasto ? [c.sinConciliar ? `${c.sinConciliar} sin conciliar` : ""] : [])];
     filaTotal(tot, [5, 6, 7], c.moneda);
   }
 
   return Buffer.from(await wb.xlsx.writeBuffer());
 }
 
-module.exports = { libroMayorExcel };
+// Piezas reutilizadas por otros reportes en Excel (Flujo de Efectivo).
+module.exports = { libroMayorExcel, piezas: { argb, relleno, encabezado, cabecera, filaDatos, filaTotal, fechaDMA, formatoMoneda } };

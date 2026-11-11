@@ -10,7 +10,19 @@ const { htmlAPdf } = require("../services/pdf.service");
 const comprobantePdfTemplate = require("../templates/comprobantePdf.template");
 const QRCode = require("qrcode");
 const almacenamiento = require("../services/almacenamiento.service");
-const { resolverCuenta } = require("../services/cajaBancos.service");
+const { resolverCuenta, copiaCuentas, cuentasParaDocumentos, cuentasSugeridas } = require("../services/cajaBancos.service");
+
+// Cuentas que se imprimen en la factura/boleta: las elegidas (ids), o las de la
+// cotización, o las sugeridas por moneda y detracción. Devuelve {} si no hay.
+async function cuentasDelComprobante(ids, datos, cot = null) {
+  let cuentas = await copiaCuentas(ids);
+  if (cuentas === undefined) {
+    cuentas = Array.isArray(cot?.cuentasBancarias) && cot.cuentasBancarias.length
+      ? cot.cuentasBancarias
+      : cuentasSugeridas(await cuentasParaDocumentos(), { moneda: datos.moneda, conDetraccion: !!datos.detraccionMonto });
+  }
+  return cuentas?.length ? { cuentasBancarias: cuentas } : {};
+}
 
 // Catálogos 09 (nota de crédito) y 10 (nota de débito). Los motivos "total"
 // anulan el comprobante copiando todos sus ítems; el resto lleva ítems propios
@@ -370,6 +382,8 @@ exports.borradorDesdeCotizacion = async (req, res) => {
       cotizacion: { id: cot.id, numero: cot.numero, total: cot.total, conIgv: cot.conIgv },
       // Condición de pago pactada en la cotización (precarga contado/crédito)
       condicion: { condicionPago: cot.condicionPago, diasCredito: cot.diasCredito },
+      // Cuentas elegidas en la cotización (null: no eligió; se sugieren por moneda)
+      cuentaBancariaIds: Array.isArray(cot.cuentasBancarias) ? cot.cuentasBancarias.map((c) => c.id) : null,
       tipoSugerido: doc?.tipo === "6" ? "FACTURA" : "BOLETA",
       puedeFactura: doc?.tipo === "6",
       cliente: { numDoc: cot.cliente.documento, nombre: cot.cliente.nombreComercial, direccion: cot.cliente.direccion || "" },
@@ -398,7 +412,10 @@ exports.emitirDesdeCotizacion = async (req, res) => {
       items: itemsDesdeCotizacion(cot),
     }));
 
-    const emitido = await crearYEmitir(datos, { cotizacionId, clienteId: cot.clienteId, usuarioId: req.user.id });
+    const emitido = await crearYEmitir(datos, {
+      cotizacionId, clienteId: cot.clienteId, usuarioId: req.user.id,
+      ...(await cuentasDelComprobante(req.body.cuentaBancariaIds, datos, cot)),
+    });
     if (emitido.estado === "ACEPTADO") await marcarCotizacionFacturada(cotizacionId, req.user.id, emitido);
     res.status(201).json(emitido);
   } catch (error) {
@@ -410,7 +427,8 @@ exports.emitirDesdeCotizacion = async (req, res) => {
    EMITIR FACTURA/BOLETA (ítems libres o revisados desde una cotización)
    body: { tipo, cliente: { numDoc, nombre, direccion }, items: [{ descripcion, unidad, cantidad, valorUnitario }],
            formaPago: "CONTADO"|"CREDITO", cuotas?: [{ monto, fechaVencimiento }],
-           detraccion?: { aplicar, codigo }, moneda?: "PEN"|"USD", observacion?, cotizacionId? }
+           detraccion?: { aplicar, codigo }, moneda?: "PEN"|"USD", observacion?, cotizacionId?,
+           cuentaBancariaIds?: [id] (cuentas impresas; sin el campo, las de la cotización o las sugeridas) }
 ========================= */
 exports.emitirManual = async (req, res) => {
   try {
@@ -433,6 +451,7 @@ exports.emitirManual = async (req, res) => {
       clienteId: cot?.clienteId ?? existente?.id ?? null,
       usuarioId: req.user.id,
       observacion: observacion ? String(observacion).trim().slice(0, 500) || null : null,
+      ...(await cuentasDelComprobante(req.body.cuentaBancariaIds, datos, cot)),
     });
     if (cot && emitido.estado === "ACEPTADO") await marcarCotizacionFacturada(cotizacionId, req.user.id, emitido);
     res.status(201).json(emitido);
@@ -756,7 +775,7 @@ exports.registrarPago = async (req, res) => {
 
     // Constancia opcional (voucher o constancia de detracción): se sube antes y,
     // si el pago no llega a guardarse, se borra del bucket.
-    const adjunto = req.file ? await almacenamiento.subir(`cobros/${id}`, req.file) : null;
+    const adjuntos = await almacenamiento.subirTodos(`cobros/${id}`, req.files);
     try {
       await prisma.pagoComprobante.create({
         data: {
@@ -765,11 +784,11 @@ exports.registrarPago = async (req, res) => {
           numeroOperacion: req.body.numeroOperacion ? String(req.body.numeroOperacion).trim().slice(0, 60) || null : null,
           nota: req.body.nota ? String(req.body.nota).trim().slice(0, 300) || null : null,
           usuarioId: req.user.id,
-          ...(adjunto && { adjuntos: { create: { ...adjunto, usuarioId: req.user.id } } }),
+          ...(adjuntos.length && { adjuntos: { create: adjuntos.map((a) => ({ ...a, usuarioId: req.user.id })) } }),
         },
       });
     } catch (error) {
-      if (adjunto) await almacenamiento.borrar([adjunto.ruta]);
+      await almacenamiento.borrar(adjuntos.map((a) => a.ruta));
       throw error;
     }
     res.status(201).json(respuestaPagos(await cargarConPagos(id)));
@@ -792,19 +811,19 @@ exports.eliminarPago = async (req, res) => {
   }
 };
 
-// POST /:id/pagos/:pagoId/adjuntos (multipart "archivo") — constancia de un cobro ya registrado.
+// POST /:id/pagos/:pagoId/adjuntos (multipart "archivo", uno o varios) — constancias de un cobro ya registrado.
 exports.agregarAdjuntoPago = async (req, res) => {
   try {
     const id = Number(req.params.id);
     const pagoId = Number(req.params.pagoId);
-    if (!req.file) throw new ErrorValidacion("Adjunta una imagen o PDF");
+    if (!req.files?.length) throw new ErrorValidacion("Adjunta una imagen o PDF");
     const pago = await prisma.pagoComprobante.findFirst({ where: { id: pagoId, comprobanteId: id }, select: { id: true } });
     if (!pago) throw new ErrorValidacion("Pago no encontrado", 404);
-    const adjunto = await almacenamiento.subir(`cobros/${id}`, req.file);
+    const adjuntos = await almacenamiento.subirTodos(`cobros/${id}`, req.files);
     try {
-      await prisma.adjuntoPago.create({ data: { ...adjunto, pagoComprobanteId: pagoId, usuarioId: req.user.id } });
+      await prisma.adjuntoPago.createMany({ data: adjuntos.map((a) => ({ ...a, pagoComprobanteId: pagoId, usuarioId: req.user.id })) });
     } catch (error) {
-      await almacenamiento.borrar([adjunto.ruta]);
+      await almacenamiento.borrar(adjuntos.map((a) => a.ruta));
       throw error;
     }
     res.status(201).json(respuestaPagos(await cargarConPagos(id)));

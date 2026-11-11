@@ -6,6 +6,11 @@ const ITEM_SELECT = {
   categoria: true, unidad: true, ubicacion: true,
   stockMinimo: true, stockMaximo: true, stockActual: true,
   costoUnitario: true, proveedorNombre: true, observaciones: true, activo: true,
+  // Proveedores propuestos (Compras): la regla es tener 3, con su último precio.
+  proveedores: {
+    select: { proveedorId: true, precio: true, moneda: true, fechaPrecio: true, origen: true, proveedor: { select: { razonSocial: true } } },
+    orderBy: { precio: "asc" },
+  },
 };
 
 const TIPOS_ITEM = ["INSUMO", "PRODUCTO_TERMINADO", "HERRAMIENTA", "MAQUINARIA_EQUIPO", "MUEBLE_ENSER"];

@@ -93,4 +93,20 @@ async function urlFirmada(ruta, segundos = 600) {
   return `${url}/storage/v1${signedURL}`;
 }
 
-module.exports = { subir, borrar, urlFirmada, configurado, ErrorAlmacenamiento, TAMANO_MAXIMO };
+// Sube varios archivos; si uno falla, borra los que ya se subieron.
+async function subirTodos(carpeta, archivos = []) {
+  archivos.forEach(validarArchivo);
+  const subidos = [];
+  try {
+    for (const a of archivos) subidos.push(await subir(carpeta, a));
+  } catch (error) {
+    await borrar(subidos.map((s) => s.ruta));
+    throw error;
+  }
+  return subidos;
+}
+
+// Máximo de archivos por envío.
+const MAXIMO_ARCHIVOS = 10;
+
+module.exports = { subir, subirTodos, borrar, urlFirmada, configurado, ErrorAlmacenamiento, TAMANO_MAXIMO, MAXIMO_ARCHIVOS };

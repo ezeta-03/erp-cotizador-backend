@@ -6,6 +6,7 @@ const migo = require("./migo.client");
 const { r2 } = require("./cobros.service");
 const { fechaLima } = require("./antiguedad.service");
 const { numeroDocumento } = require("./sunat/ubl");
+const { etiquetaDocumento } = require("../utils/documentoPorPagar");
 
 const TIPOS_CUENTA = ["BANCO", "CAJA", "DETRACCIONES", "BILLETERA"];
 const MONEDAS = ["PEN", "USD"];
@@ -51,7 +52,7 @@ async function movimientosDe(cuenta, { desde, hasta } = {}) {
       where: { cuentaFinancieraId: cuenta.id, fecha: rango },
       select: {
         id: true, tipo: true, fecha: true, monto: true, montoCuenta: true, medio: true, numeroOperacion: true,
-        cuenta: { select: { id: true, serie: true, numero: true, moneda: true, proveedor: { select: { razonSocial: true } } } },
+        cuenta: { select: { id: true, serie: true, numero: true, numeroInterno: true, moneda: true, proveedor: { select: { razonSocial: true } } } },
       },
     }),
     prisma.proveedorCuota.findMany({
@@ -70,7 +71,7 @@ async function movimientosDe(cuenta, { desde, hasta } = {}) {
     })),
     ...pagos.map((p) => ({
       origen: "PAGO", id: p.id, fecha: fechaLima(p.fecha), ingreso: 0, egreso: p.montoCuenta ?? p.monto,
-      concepto: `${p.tipo === "DETRACCION" ? "Detracción" : "Pago"} ${p.cuenta.serie}-${p.cuenta.numero}`,
+      concepto: `${p.tipo === "DETRACCION" ? "Detracción" : "Pago"} ${etiquetaDocumento(p.cuenta)}`,
       tercero: p.cuenta.proveedor.razonSocial, medio: p.medio, numeroOperacion: p.numeroOperacion, documentoId: p.cuenta.id,
     })),
     ...cuotas.map((q) => ({
@@ -89,4 +90,35 @@ async function saldoDe(cuenta) {
   return { ingresos, egresos, saldo: r2(cuenta.saldoInicial + ingresos - egresos), movimientos: movs.length };
 }
 
-module.exports = { TIPOS_CUENTA, MONEDAS, resolverCuenta, movimientosDe, saldoDe };
+// ── Cuentas impresas en cotizaciones y comprobantes ──────────────────────
+// Las de caja no sirven para que el cliente pague.
+const TIPOS_PARA_DOCUMENTOS = ["BANCO", "DETRACCIONES", "BILLETERA"];
+const CAMPOS_DOCUMENTO = { id: true, nombre: true, tipo: true, banco: true, numero: true, cci: true, moneda: true };
+
+const cuentasParaDocumentos = () => prisma.cuentaFinanciera.findMany({
+  where: { activo: true, tipo: { in: TIPOS_PARA_DOCUMENTOS } },
+  select: CAMPOS_DOCUMENTO,
+  orderBy: [{ orden: "asc" }, { nombre: "asc" }],
+});
+
+// Precarga: las de la moneda del documento (bancos y billeteras) y la de
+// detracciones si el documento la tiene.
+function cuentasSugeridas(cuentas, { moneda = "PEN", conDetraccion = false } = {}) {
+  return cuentas.filter((c) => (c.tipo === "DETRACCIONES" ? conDetraccion : c.moneda === moneda));
+}
+
+// Copia de las cuentas elegidas (ids) para guardar en el documento, en el orden
+// del catálogo; así el PDF no cambia si luego se edita la cuenta. null = sin cuentas.
+async function copiaCuentas(ids) {
+  if (!Array.isArray(ids)) return undefined; // no vino: no se toca
+  const elegidas = new Set(ids.map(Number).filter(Boolean));
+  if (!elegidas.size) return null;
+  const cuentas = (await cuentasParaDocumentos()).filter((c) => elegidas.has(c.id));
+  if (cuentas.length !== elegidas.size) throw errorValidacion("Alguna de las cuentas elegidas no existe o está desactivada");
+  return cuentas;
+}
+
+module.exports = {
+  TIPOS_CUENTA, MONEDAS, resolverCuenta, movimientosDe, saldoDe,
+  cuentasParaDocumentos, cuentasSugeridas, copiaCuentas,
+};

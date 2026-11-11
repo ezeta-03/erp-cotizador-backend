@@ -40,6 +40,8 @@ model Usuario {
   panelWidgets                PanelWidget[]
   movimientosAlmacen          MovimientoAlmacen[]
   ordenesAlmacen              OrdenAlmacen[]
+  ordenesCompraCreadas        OrdenCompra[]        @relation("OrdenCompraCreador")
+  ordenesCompraAprobadas      OrdenCompra[]        @relation("OrdenCompraAprobador")
   proyectosComoGerente        Proyecto[]           @relation("ProyectoGerenteResponsable")
   proyectosComoJefe           Proyecto[]           @relation("ProyectoJefeResponsable")
   solicitudesAlmacenResueltas SolicitudAlmacen[]
@@ -141,6 +143,9 @@ model Cotizacion {
   diasCredito          Int?
   proyectoExternoId    String?
   proyectoExternoError String?
+  // Cuentas de la empresa elegidas para que el cliente pague (copia de
+  // CuentaFinanciera al guardar): [{ id, nombre, tipo, banco, numero, cci, moneda }]
+  cuentasBancarias     Json?
   clienteId            Int
   usuarioId            Int
   cliente              Cliente           @relation(fields: [clienteId], references: [id])
@@ -503,6 +508,9 @@ model ItemAlmacen {
   ordenItems          OrdenAlmacenItem[]
   solicitudes         SolicitudAlmacen[]
   partidasPresupuesto PartidaPresupuesto[]
+  // Proveedores propuestos (la regla es tener 3) con su último precio
+  proveedores         ItemProveedor[]
+  ordenCompraItems    OrdenCompraItem[]
 
   @@index([tipo])
   @@index([categoria])
@@ -538,6 +546,8 @@ model SolicitudAlmacen {
   movimiento        MovimientoAlmacen?     @relation(fields: [movimientoId], references: [id])
   createdAt         DateTime               @default(now())
   resueltoAt        DateTime?
+  // Líneas de órdenes de compra generadas para atender esta solicitud
+  ordenCompraItems  OrdenCompraItem[]
 
   @@index([estado])
   @@index([proyectoExternoId])
@@ -566,10 +576,14 @@ model OrdenAlmacen {
   items             OrdenAlmacenItem[]
   movimientos       MovimientoAlmacen[]
   cuentasPorPagar   CuentaPorPagar[]
+  // Entrada creada al recibir una orden de compra
+  ordenCompraId     Int?
+  ordenCompra       OrdenCompra?          @relation(fields: [ordenCompraId], references: [id])
 
   @@index([tipo])
   @@index([fecha])
   @@index([proyectoId])
+  @@index([ordenCompraId])
 }
 
 model OrdenAlmacenItem {
@@ -666,6 +680,7 @@ model Proyecto {
   solicitudes          SolicitudAlmacen[]
   presupuesto          PresupuestoProyecto?
   cuentasPorPagar      CuentaPorPagar[]
+  ordenesCompra        OrdenCompra[]
 
   @@unique([proyectoFirestoreId])
   @@index([clienteId])
@@ -795,6 +810,8 @@ model Comprobante {
   detraccionCuenta      String?
   // El cliente es agente de retención (retiene 3% en facturas sin detracción > S/ 700)
   agenteRetencion       Boolean           @default(false)
+  // Cuentas de la empresa impresas en el comprobante (copia al emitir), como en Cotizacion
+  cuentasBancarias      Json?
   // ERP: emitido por el PSE. EXTERNO: emitido fuera del ERP (portal SOL) y
   // registrado solo para cobrarlo; no tiene XML/CDR ni se envía a SUNAT.
   origen                String            @default("ERP")
@@ -877,10 +894,10 @@ model PagoComprobante {
 // Distinto de Proveedor, que son los arrendadores de paneles con contrato y
 // cuotas mensuales; esas cuotas también se muestran en Cuentas por pagar.
 model ProveedorCompra {
-  id                     Int              @id @default(autoincrement())
+  id                     Int                     @id @default(autoincrement())
   // RUC (11), DNI (8) o vacío para vendedores informales (notas de venta)
-  ruc                    String?          @unique
-  tipoDocIdentidad       String           @default("RUC") // RUC | DNI | NINGUNO
+  ruc                    String?                 @unique
+  tipoDocIdentidad       String                  @default("RUC") // RUC | DNI | NINGUNO
   razonSocial            String
   nombreComercial        String?
   direccion              String?
@@ -891,19 +908,45 @@ model ProveedorCompra {
   numeroCuenta           String?
   cci                    String?
   // Condición de pago por defecto al registrar sus facturas
-  condicionPago          String           @default("CONTADO")
+  condicionPago          String                  @default("CONTADO")
   diasCredito            Int?
   // PRODUCTO (mercadería que pasa por almacén) o SERVICIO. afectaComercializacion:
   // su gasto es costo de venta (imprenta, materiales) y no gasto operativo (luz, contador).
-  tipo                   String           @default("PRODUCTO")
-  afectaComercializacion Boolean          @default(true)
+  tipo                   String                  @default("PRODUCTO")
+  afectaComercializacion Boolean                 @default(true)
   // Categoría de gasto que se precarga al registrar sus documentos
   categoriaGastoId       Int?
-  categoriaGasto         CategoriaGasto?  @relation(fields: [categoriaGastoId], references: [id])
-  activo                 Boolean          @default(true)
-  createdAt              DateTime         @default(now())
-  updatedAt              DateTime         @updatedAt
+  categoriaGasto         CategoriaGasto?         @relation(fields: [categoriaGastoId], references: [id])
+  activo                 Boolean                 @default(true)
+  createdAt              DateTime                @default(now())
+  updatedAt              DateTime                @updatedAt
   cuentas                CuentaPorPagar[]
+  // Reparto de sus gastos entre líneas de negocio (los % suman 100 o no hay reparto)
+  lineasNegocio          ProveedorLineaNegocio[]
+  itemsPropuestos        ItemProveedor[]
+  ordenesCompra          OrdenCompra[]
+}
+
+// Catálogo editable de líneas de negocio (Outdoor, Impresión…), para repartir
+// los gastos de cada proveedor según sus porcentajes.
+model LineaNegocio {
+  id          Int                     @id @default(autoincrement())
+  nombre      String                  @unique
+  orden       Int                     @default(0)
+  activo      Boolean                 @default(true)
+  createdAt   DateTime                @default(now())
+  proveedores ProveedorLineaNegocio[]
+}
+
+model ProveedorLineaNegocio {
+  proveedorId    Int
+  proveedor      ProveedorCompra @relation(fields: [proveedorId], references: [id], onDelete: Cascade)
+  lineaNegocioId Int
+  lineaNegocio   LineaNegocio    @relation(fields: [lineaNegocioId], references: [id])
+  porcentaje     Float
+
+  @@id([proveedorId, lineaNegocioId])
+  @@index([lineaNegocioId])
 }
 
 // Catálogo editable de categorías de gasto, con un nivel de subcategorías
@@ -936,6 +979,8 @@ model CuentaPorPagar {
   tipoDocumento       String               @default("FACTURA") // FACTURA | RECIBO_HONORARIOS | BOLETA | NOTA_DEBITO | NOTA_VENTA | OTRO
   serie               String
   numero              String
+  // Correlativo interno de las notas de venta (NV-000123), aunque traigan su propio número
+  numeroInterno       String?              @unique
   fechaEmision        DateTime
   moneda              String               @default("PEN")
   tipoCambio          Float?
@@ -964,6 +1009,9 @@ model CuentaPorPagar {
   ordenAlmacen        OrdenAlmacen?        @relation(fields: [ordenAlmacenId], references: [id])
   movimientoAlmacenId Int?
   movimientoAlmacen   MovimientoAlmacen?   @relation(fields: [movimientoAlmacenId], references: [id])
+  // Orden de compra que factura este documento (Compras)
+  ordenCompraId       Int?
+  ordenCompra         OrdenCompra?         @relation(fields: [ordenCompraId], references: [id])
   anulado             Boolean              @default(false)
   usuarioId           Int
   usuario             Usuario              @relation(fields: [usuarioId], references: [id])
@@ -974,6 +1022,7 @@ model CuentaPorPagar {
 
   @@unique([proveedorId, tipoDocumento, serie, numero])
   @@index([proyectoId])
+  @@index([ordenCompraId])
   @@index([fechaEmision])
 }
 
@@ -1050,4 +1099,80 @@ model CuentaFinanciera {
   cobros            PagoComprobante[]
   pagos             PagoCuentaPorPagar[]
   cuotasPanel       ProveedorCuota[]
+}
+
+// ── Compras ───────────────────────────────────────────────────────────────
+// Proveedor propuesto para un ítem de almacén (la regla es proponer 3) con su
+// último precio unitario sin IGV. Al recibir una orden de compra se actualiza
+// el precio del proveedor elegido (origen COMPRA).
+model ItemProveedor {
+  id            Int             @id @default(autoincrement())
+  itemAlmacenId Int
+  item          ItemAlmacen     @relation(fields: [itemAlmacenId], references: [id], onDelete: Cascade)
+  proveedorId   Int
+  proveedor     ProveedorCompra @relation(fields: [proveedorId], references: [id])
+  precio        Float
+  moneda        String          @default("PEN")
+  fechaPrecio   DateTime        @default(now())
+  origen        String          @default("MANUAL") // MANUAL | COMPRA
+  createdAt     DateTime        @default(now())
+  updatedAt     DateTime        @updatedAt
+
+  @@unique([itemAlmacenId, proveedorId])
+  @@index([proveedorId])
+}
+
+// Orden de compra a un proveedor. Flujo: BORRADOR → PENDIENTE (enviada a
+// Finanzas) → APROBADA o RECHAZADA → RECIBIDA_PARCIAL → RECIBIDA; o ANULADA.
+// Precios sin IGV; se paga vía Cuentas por pagar (documentos vinculados).
+model OrdenCompra {
+  id                 Int               @id @default(autoincrement())
+  numero             String            @unique // OC-000001
+  proveedorId        Int
+  proveedor          ProveedorCompra   @relation(fields: [proveedorId], references: [id])
+  estado             String            @default("BORRADOR")
+  moneda             String            @default("PEN")
+  tipoCambio         Float?
+  condicionPago      String            @default("CONTADO")
+  diasCredito        Int?
+  fechaEntrega       DateTime?
+  proyectoId         Int?
+  proyecto           Proyecto?         @relation(fields: [proyectoId], references: [id])
+  notas              String?
+  valorVenta         Float             @default(0)
+  igv                Float             @default(0)
+  total              Float             @default(0)
+  creadoPorId        Int
+  creadoPor          Usuario           @relation("OrdenCompraCreador", fields: [creadoPorId], references: [id])
+  enviadaAt          DateTime?
+  aprobadoPorId      Int?
+  aprobadoPor        Usuario?          @relation("OrdenCompraAprobador", fields: [aprobadoPorId], references: [id])
+  aprobadoAt         DateTime?
+  comentarioFinanzas String?
+  motivoRechazo      String?
+  createdAt          DateTime          @default(now())
+  updatedAt          DateTime          @updatedAt
+  items              OrdenCompraItem[]
+  recepciones        OrdenAlmacen[]
+  cuentasPorPagar    CuentaPorPagar[]
+
+  @@index([estado])
+  @@index([proveedorId])
+}
+
+model OrdenCompraItem {
+  id                 Int               @id @default(autoincrement())
+  ordenCompraId      Int
+  ordenCompra        OrdenCompra       @relation(fields: [ordenCompraId], references: [id], onDelete: Cascade)
+  itemAlmacenId      Int
+  item               ItemAlmacen       @relation(fields: [itemAlmacenId], references: [id])
+  cantidad           Float
+  precioUnitario     Float // sin IGV, en la moneda de la orden
+  cantidadRecibida   Float             @default(0)
+  solicitudAlmacenId Int?
+  solicitud          SolicitudAlmacen? @relation(fields: [solicitudAlmacenId], references: [id])
+
+  @@index([ordenCompraId])
+  @@index([itemAlmacenId])
+  @@index([solicitudAlmacenId])
 }

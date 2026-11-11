@@ -3,8 +3,8 @@ const prisma = require("../config/prisma");
 // Módulos que el Admin puede prender/apagar por rol. El orden es el del menú.
 // Mantener sincronizado con src/constants/modulos.js del frontend.
 const MODULOS_POR_ROL = {
-  VENTAS: ["dashboard", "clientes", "almacen", "proyectos", "outdoor", "btl"],
-  CONTABLE: ["dashboard", "clientes", "facturar", "cuentas-por-cobrar", "cuentas-por-pagar", "caja-bancos", "libro-mayor", "almacen", "proyectos", "outdoor", "btl"],
+  VENTAS: ["dashboard", "clientes", "almacen", "compras", "proyectos", "outdoor", "btl"],
+  CONTABLE: ["dashboard", "clientes", "facturar", "cuentas-por-cobrar", "cuentas-por-pagar", "caja-bancos", "libro-mayor", "flujo-efectivo", "almacen", "compras", "proyectos", "outdoor", "btl"],
 };
 
 async function habilitadosPorRol() {

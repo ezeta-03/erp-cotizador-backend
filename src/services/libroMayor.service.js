@@ -10,6 +10,8 @@ const { r2 } = require("./cobros.service");
 const { fechaLima } = require("./antiguedad.service");
 const { numeroDocumento } = require("./sunat/ubl");
 const { movimientosDe } = require("./cajaBancos.service");
+const { etiquetaDocumento } = require("../utils/documentoPorPagar");
+const { repartosPorProveedor, acumuladorLineas } = require("./lineasNegocio.service");
 
 const TIPO_DOC_PROVEEDOR = {
   FACTURA: "Factura", RECIBO_HONORARIOS: "Recibo por honorarios", BOLETA: "Boleta", NOTA_DEBITO: "Nota de débito",
@@ -81,14 +83,18 @@ async function ventas(desde, hasta) {
   return cuenta.movimientos.length || cuenta.saldoFinal ? [cuenta] : [];
 }
 
+// Gastos por categoría. Cada documento de proveedor va "conciliado" si tiene
+// al menos un archivo adjunto (factura o foto); las cuotas de paneles no aplican.
+// También reparte el gasto del periodo entre líneas de negocio (porLinea).
 async function gastos(desde, hasta) {
   const rangoAnio = { gte: inicioDia(`${desde.slice(0, 4)}-01-01`), lte: finDia(hasta) };
-  const [documentos, cuotas, categorias] = await Promise.all([
+  const [documentos, cuotas, categorias, repartos] = await Promise.all([
     prisma.cuentaPorPagar.findMany({
       where: { anulado: false, fechaEmision: rangoAnio },
       select: {
-        tipoDocumento: true, serie: true, numero: true, fechaEmision: true, moneda: true, tipoCambio: true, valorVenta: true,
-        descripcion: true, deducible: true, categoriaGastoId: true, proveedor: { select: { razonSocial: true } },
+        id: true, tipoDocumento: true, serie: true, numero: true, numeroInterno: true, fechaEmision: true, moneda: true, tipoCambio: true,
+        valorVenta: true, descripcion: true, deducible: true, categoriaGastoId: true, proveedorId: true,
+        proveedor: { select: { razonSocial: true } }, _count: { select: { adjuntos: true } },
       },
     }),
     prisma.proveedorCuota.findMany({
@@ -97,7 +103,9 @@ async function gastos(desde, hasta) {
       select: { numero: true, fechaCobro: true, monto: true, proveedor: { select: { nombre: true, razonSocial: true, ubicacion: true } } },
     }),
     prisma.categoriaGasto.findMany({ include: { padre: { select: { nombre: true } } }, orderBy: [{ orden: "asc" }, { nombre: "asc" }] }),
+    repartosPorProveedor(),
   ]);
+  const lineas = acumuladorLineas(repartos);
 
   const porCategoria = new Map(); // id | "SIN" → movimientos
   const agregar = (id, mov) => {
@@ -105,15 +113,21 @@ async function gastos(desde, hasta) {
     porCategoria.get(id).push(mov);
   };
   for (const d of documentos) {
+    const fecha = fechaLima(d.fechaEmision);
+    const monto = enSoles(d.moneda, d.valorVenta, d.tipoCambio);
+    if (fecha >= desde) lineas.agregar(d.proveedorId, monto);
     agregar(d.categoriaGastoId ?? "SIN", {
-      fecha: fechaLima(d.fechaEmision), documento: `${d.serie}-${d.numero}`,
+      documentoId: d.id, conciliado: d._count.adjuntos > 0,
+      fecha, documento: etiquetaDocumento(d),
       concepto: `${TIPO_DOC_PROVEEDOR[d.tipoDocumento] || "Documento"}${d.deducible ? "" : " (no deducible)"}${d.descripcion ? ` — ${d.descripcion}` : ""}${d.moneda === "USD" ? ` — US$ ${d.valorVenta.toFixed(2)} × ${d.tipoCambio}` : ""}`,
-      tercero: d.proveedor.razonSocial, debe: enSoles(d.moneda, d.valorVenta, d.tipoCambio), haber: 0,
+      tercero: d.proveedor.razonSocial, debe: monto, haber: 0,
     });
   }
   const alquiler = categorias.find((c) => !c.padreId && c.nombre === "Alquiler de paneles");
   for (const q of cuotas) {
+    if (fechaLima(q.fechaCobro) >= desde) lineas.agregar(null, q.monto);
     agregar(alquiler?.id ?? "PANELES", {
+      conciliado: null,
       fecha: fechaLima(q.fechaCobro), documento: `Cuota ${q.numero}`, concepto: `Alquiler de panel${q.proveedor.ubicacion ? ` — ${q.proveedor.ubicacion}` : ""}`,
       tercero: q.proveedor.razonSocial || q.proveedor.nombre, debe: q.monto, haber: 0,
     });
@@ -134,13 +148,16 @@ async function gastos(desde, hasta) {
   if (porCategoria.has("SIN")) {
     resultado.push(cerrar({ clave: "CAT-SIN", nombre: "Sin categoría", grupo: "GASTO_OPERATIVO", naturaleza: "DEUDORA", moneda: "PEN" }, porCategoria.get("SIN"), desde));
   }
-  return resultado.filter((c) => c.movimientos.length || c.saldoFinal);
+  const cuentas = resultado
+    .filter((c) => c.movimientos.length || c.saldoFinal)
+    .map((c) => ({ ...c, sinConciliar: c.movimientos.filter((m) => m.conciliado === false).length }));
+  return { cuentas, porLinea: lineas.filas() };
 }
 
 // Mayor del periodo [desde, hasta] (aaaa-mm-dd): cuentas por grupo y totales en soles.
 async function libroMayor(desde, hasta) {
   const [cb, ing, gas] = await Promise.all([cajaBancos(desde, hasta), ventas(desde, hasta), gastos(desde, hasta)]);
-  const cuentas = [...cb, ...ing, ...gas];
+  const cuentas = [...cb, ...ing, ...gas.cuentas];
   const totales = Object.fromEntries(GRUPOS.filter((g) => g !== "CAJA_BANCOS").map((g) => {
     const del = cuentas.filter((c) => c.grupo === g);
     return [g, {
@@ -151,7 +168,10 @@ async function libroMayor(desde, hasta) {
   }));
   // Resultado del periodo: ventas − costo de venta − gasto operativo.
   const resultadoPeriodo = r2(totales.INGRESOS.periodo - totales.COSTO_VENTA.periodo - totales.GASTO_OPERATIVO.periodo);
-  return { desde, hasta, cuentas, totales, resultadoPeriodo };
+  // Conciliación: documentos de proveedores del periodo con y sin comprobante adjunto.
+  const docs = gas.cuentas.flatMap((c) => c.movimientos).filter((m) => m.conciliado !== null && m.conciliado !== undefined);
+  const conciliacion = { conciliados: docs.filter((m) => m.conciliado).length, sinConciliar: docs.filter((m) => !m.conciliado).length };
+  return { desde, hasta, cuentas, totales, resultadoPeriodo, conciliacion, porLinea: gas.porLinea };
 }
 
 module.exports = { libroMayor, GRUPOS };

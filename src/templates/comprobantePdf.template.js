@@ -4,6 +4,7 @@
 // QR y hash.
 const numeroALetras = require("../utils/numeroALetras");
 const { numeroDocumento } = require("../services/sunat/ubl");
+const cuentasPdf = require("../utils/cuentasPdf");
 
 const TITULO = {
   FACTURA: "FACTURA ELECTRÓNICA", BOLETA: "BOLETA DE VENTA ELECTRÓNICA",
@@ -104,6 +105,9 @@ module.exports = ({ comprobante: c, emisor, qrDataUrl, detraccionDescripcion, re
   .qr { display: flex; gap: 12px; align-items: center; margin-top: 14px; border-top: 1px solid #111; padding-top: 10px; }
   .qr img { width: 92px; height: 92px; }
   .qr .txt { font-size: 9px; line-height: 1.5; color: #333; }
+${cuentasPdf.estilos()}
+  .cuentas-pago { border: 1px solid #111; padding: 6px 8px; margin-top: 10px; }
+  .cuentas-pago-tit { color: #111; font-size: 10px; text-transform: none; letter-spacing: 0; }
 </style></head><body>
   <div class="cab">
     <div class="emisor">
@@ -140,6 +144,7 @@ module.exports = ({ comprobante: c, emisor, qrDataUrl, detraccionDescripcion, re
       ${detraccion}
       ${retencion}
       ${cuotas}
+      ${["FACTURA", "BOLETA"].includes(c.tipo) ? cuentasPdf(c.cuentasBancarias, { titulo: "Cuentas para el pago" }) : ""}
     </div>
     <table class="totales">
       <tr><td>Op. Gravadas</td><td class="num">${S(c.valorVenta)}</td></tr>

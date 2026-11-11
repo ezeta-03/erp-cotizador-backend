@@ -7,6 +7,7 @@ const { leerCondicion } = require("../utils/condicionPago");
 const { sincronizarEstadoContrato } = require("./proveedores.controller");
 const almacenamiento = require("../services/almacenamiento.service");
 const { resolverCuenta } = require("../services/cajaBancos.service");
+const { etiquetaDocumento, referenciaProveedor } = require("../utils/documentoPorPagar");
 
 // Cuentas por pagar: documentos de proveedores de compras (facturas, recibos
 // por honorarios…) y las cuotas de alquiler de los arrendadores de paneles.
@@ -77,8 +78,33 @@ async function datosProveedor(body, parcial = false) {
     if (body[campo] !== undefined) data[campo] = texto(body[campo]);
   }
   if (body.activo !== undefined) data.activo = !!body.activo;
+  const lineas = await repartoLineas(body.lineasNegocio);
+  if (lineas) data.lineasNegocio = { ...(parcial && { deleteMany: {} }), create: lineas };
   return { ...data, ...leerCondicion(body) };
 }
+
+// Reparto entre líneas de negocio: [{ lineaNegocioId, porcentaje }] que suman
+// 100 %, o vacío (sin reparto). undefined = no se cambia.
+async function repartoLineas(valor) {
+  if (valor === undefined) return undefined;
+  if (!Array.isArray(valor)) throw new ErrorValidacion("lineasNegocio debe ser una lista");
+  const lineas = valor
+    .map((l) => ({ lineaNegocioId: Number(l.lineaNegocioId), porcentaje: r2(Number(l.porcentaje)) }))
+    .filter((l) => l.lineaNegocioId && l.porcentaje);
+  if (!lineas.length) return [];
+  if (new Set(lineas.map((l) => l.lineaNegocioId)).size !== lineas.length) throw new ErrorValidacion("Una línea de negocio está repetida");
+  if (lineas.some((l) => !(l.porcentaje > 0 && l.porcentaje <= 100))) throw new ErrorValidacion("Cada porcentaje debe estar entre 0 y 100");
+  const suma = r2(lineas.reduce((a, l) => a + l.porcentaje, 0));
+  if (Math.abs(suma - 100) > 0.01) throw new ErrorValidacion(`Los porcentajes por línea de negocio suman ${suma} % y deben sumar 100 %`);
+  const existentes = await prisma.lineaNegocio.count({ where: { id: { in: lineas.map((l) => l.lineaNegocioId) } } });
+  if (existentes !== lineas.length) throw new ErrorValidacion("Alguna línea de negocio no existe");
+  return lineas;
+}
+
+const INCLUDE_PROVEEDOR = {
+  categoriaGasto: { select: { id: true, nombre: true } },
+  lineasNegocio: { select: { lineaNegocioId: true, porcentaje: true, lineaNegocio: { select: { nombre: true } } }, orderBy: { porcentaje: "desc" } },
+};
 
 exports.listarProveedores = async (req, res) => {
   try {
@@ -94,7 +120,7 @@ exports.listarProveedores = async (req, res) => {
           ],
         }),
       },
-      include: { categoriaGasto: { select: { id: true, nombre: true } } },
+      include: INCLUDE_PROVEEDOR,
       orderBy: { razonSocial: "asc" },
     });
     res.json(proveedores);
@@ -105,7 +131,7 @@ exports.listarProveedores = async (req, res) => {
 
 exports.crearProveedor = async (req, res) => {
   try {
-    res.status(201).json(await prisma.proveedorCompra.create({ data: await datosProveedor(req.body) }));
+    res.status(201).json(await prisma.proveedorCompra.create({ data: await datosProveedor(req.body), include: INCLUDE_PROVEEDOR }));
   } catch (error) {
     if (error.code === "P2002") return res.status(409).json({ message: "Ya hay un proveedor con ese RUC" });
     responderError(res, error, "creando proveedor");
@@ -117,6 +143,7 @@ exports.actualizarProveedor = async (req, res) => {
     res.json(await prisma.proveedorCompra.update({
       where: { id: Number(req.params.id) },
       data: await datosProveedor(req.body, true),
+      include: INCLUDE_PROVEEDOR,
     }));
   } catch (error) {
     if (error.code === "P2002") return res.status(409).json({ message: "Ya hay un proveedor con ese RUC" });
@@ -218,6 +245,60 @@ exports.actualizarCategoria = async (req, res) => {
 };
 
 /* =========================
+   LÍNEAS DE NEGOCIO (catálogo editable para repartir los gastos de proveedores)
+========================= */
+const listaLineas = () => prisma.lineaNegocio.findMany({
+  orderBy: [{ activo: "desc" }, { orden: "asc" }, { nombre: "asc" }],
+  include: { _count: { select: { proveedores: true } } },
+});
+
+exports.listarLineas = async (req, res) => {
+  try {
+    res.json(await listaLineas());
+  } catch (error) {
+    responderError(res, error, "listando líneas de negocio");
+  }
+};
+
+async function datosLinea(body, actual = null) {
+  const data = {};
+  if (!actual || body.nombre !== undefined) {
+    const nombre = texto(body.nombre, 60);
+    if (!nombre) throw new ErrorValidacion("Falta el nombre de la línea de negocio");
+    const repetida = await prisma.lineaNegocio.findFirst({
+      where: { nombre: { equals: nombre, mode: "insensitive" }, ...(actual && { id: { not: actual.id } }) },
+    });
+    if (repetida) throw new ErrorValidacion("Ya existe una línea de negocio con ese nombre");
+    data.nombre = nombre;
+  }
+  if (body.orden !== undefined) data.orden = Number(body.orden) || 0;
+  if (body.activo !== undefined) data.activo = !!body.activo;
+  return data;
+}
+
+exports.crearLinea = async (req, res) => {
+  try {
+    await prisma.lineaNegocio.create({ data: await datosLinea(req.body) });
+    res.status(201).json(await listaLineas());
+  } catch (error) {
+    responderError(res, error, "creando línea de negocio");
+  }
+};
+
+// PUT /lineas-negocio/:id — nombre, orden, activo. Desactivarla no cambia el
+// reparto de los proveedores que ya la usan.
+exports.actualizarLinea = async (req, res) => {
+  try {
+    const actual = await prisma.lineaNegocio.findUnique({ where: { id: Number(req.params.id) } });
+    if (!actual) throw new ErrorValidacion("Línea de negocio no encontrada", 404);
+    await prisma.lineaNegocio.update({ where: { id: actual.id }, data: await datosLinea(req.body, actual) });
+    res.json(await listaLineas());
+  } catch (error) {
+    responderError(res, error, "actualizando línea de negocio");
+  }
+};
+
+/* =========================
    DOCUMENTOS POR PAGAR
 ========================= */
 const SELECT_ADJUNTO = { id: true, nombre: true, tipo: true, tamano: true };
@@ -230,6 +311,7 @@ const INCLUDE_CUENTA = {
   },
   categoriaGasto: { select: { id: true, nombre: true, grupo: true, padre: { select: { nombre: true } } } },
   proyecto: { select: { id: true, nombre: true } },
+  ordenCompra: { select: { id: true, numero: true, estado: true, total: true, moneda: true } },
   ordenAlmacen: { select: { id: true, fecha: true, notas: true, items: { select: { itemAlmacenId: true, cantidad: true } } } },
   movimientoAlmacen: { select: { id: true, fecha: true, cantidad: true, itemAlmacenId: true, item: { select: { codigo: true, nombre: true } } } },
   adjuntos: { select: SELECT_ADJUNTO, orderBy: { id: "asc" } },
@@ -305,8 +387,17 @@ async function estadosAlmacen(cuentas) {
 }
 
 const conResumen = (c, hoy, estados) => ({
-  ...c, documento: `${c.serie}-${c.numero}`, pago: resumenPago(c, hoy), estadoAlmacen: estados?.get(c.id) ?? null,
+  ...c, documento: etiquetaDocumento(c), referenciaProveedor: referenciaProveedor(c), pago: resumenPago(c, hoy), estadoAlmacen: estados?.get(c.id) ?? null,
 });
+
+// Siguiente correlativo interno de notas de venta: NV-000001, NV-000002…
+async function siguienteNumeroInterno() {
+  const ultima = await prisma.cuentaPorPagar.findFirst({
+    where: { numeroInterno: { startsWith: "NV-" } }, orderBy: { numeroInterno: "desc" }, select: { numeroInterno: true },
+  });
+  const n = ultima ? Number(ultima.numeroInterno.slice(3)) + 1 : 1;
+  return `NV-${String(n).padStart(6, "0")}`;
+}
 
 // Valida el body y devuelve los datos del documento (sin usuario).
 async function prepararCuenta(body) {
@@ -319,10 +410,13 @@ async function prepararCuenta(body) {
   if (REQUIEREN_RUC.includes(tipoDocumento) && proveedor.tipoDocIdentidad !== "RUC") {
     throw new ErrorValidacion("Ese tipo de documento exige un proveedor con RUC; usa Nota de venta u Otro");
   }
-  // Nota de venta (sin comprobante válido): serie NV y, si no trae número, uno generado.
+  // Nota de venta (sin comprobante válido): lleva nuestro correlativo (NV-000123);
+  // si no trae número del proveedor, ese mismo es su serie y número.
   const notaVenta = tipoDocumento === "NOTA_VENTA";
-  const serie = String(body.serie || (notaVenta ? "NV" : "")).trim().toUpperCase();
-  const numero = String(body.numero || (notaVenta ? `SN${Date.now().toString(36).toUpperCase()}` : "")).trim().replace(/^0+(?=\d)/, "");
+  const numeroInterno = notaVenta ? body.numeroInterno || (await siguienteNumeroInterno()) : null;
+  const sinNumero = notaVenta && !String(body.numero || "").trim();
+  const serie = sinNumero ? "NV" : String(body.serie || (notaVenta ? "NV" : "")).trim().toUpperCase();
+  const numero = sinNumero ? numeroInterno.slice(3) : String(body.numero || "").trim().replace(/^0+(?=\d)/, "");
   if (!/^[A-Z0-9]{1,4}$/.test(serie)) throw new ErrorValidacion("La serie debe tener de 1 a 4 caracteres (ej. F001, E001)");
   if (!/^[A-Z0-9-]{1,20}$/i.test(numero)) throw new ErrorValidacion("Indica el número del documento");
 
@@ -380,6 +474,14 @@ async function prepararCuenta(body) {
     const orden = await prisma.ordenAlmacen.findUnique({ where: { id: ordenAlmacenId }, select: { tipo: true } });
     if (orden?.tipo !== "ENTRADA") throw new ErrorValidacion("La orden de almacén debe ser una entrada");
   }
+  // Orden de compra que factura (Compras): del mismo proveedor y aprobada por Finanzas.
+  const ordenCompraId = body.ordenCompraId ? Number(body.ordenCompraId) : null;
+  if (ordenCompraId) {
+    const oc = await prisma.ordenCompra.findUnique({ where: { id: ordenCompraId }, select: { proveedorId: true, estado: true, numero: true } });
+    if (!oc) throw new ErrorValidacion("Orden de compra no encontrada");
+    if (oc.proveedorId !== proveedorId) throw new ErrorValidacion(`La orden ${oc.numero} es de otro proveedor`);
+    if (!["APROBADA", "RECIBIDA_PARCIAL", "RECIBIDA"].includes(oc.estado)) throw new ErrorValidacion(`La orden ${oc.numero} no está aprobada por Finanzas`);
+  }
   const movimientoAlmacenId = body.movimientoAlmacenId ? Number(body.movimientoAlmacenId) : null;
   if (movimientoAlmacenId) {
     const mov = await prisma.movimientoAlmacen.findUnique({ where: { id: movimientoAlmacenId }, select: { tipo: true } });
@@ -387,14 +489,14 @@ async function prepararCuenta(body) {
   }
 
   return {
-    proveedorId, tipoDocumento, serie, numero,
+    proveedorId, tipoDocumento, serie, numero, numeroInterno,
     fechaEmision: fechaDia(fecha), moneda, tipoCambio,
     valorVenta: r2(total - igv), igv, total, detraccionMonto, retencionMonto,
     categoriaGastoId, descripcion: texto(body.descripcion, 500),
     deducible: !notaVenta,
     pasaPorAlmacen: body.pasaPorAlmacen === undefined ? true : !!body.pasaPorAlmacen,
     formaPago, cuotas,
-    proyectoId, ordenAlmacenId, movimientoAlmacenId,
+    proyectoId, ordenAlmacenId, movimientoAlmacenId, ordenCompraId,
   };
 }
 
@@ -425,8 +527,17 @@ exports.listarDocumentos = async (req, res) => {
 
 exports.crearDocumento = async (req, res) => {
   try {
-    const datos = await prepararCuenta(req.body);
-    const c = await prisma.cuentaPorPagar.create({ data: { ...datos, usuarioId: req.user.id }, include: INCLUDE_CUENTA });
+    // Si otra nota de venta tomó el mismo correlativo a la vez, se recalcula y reintenta.
+    let c;
+    for (let intento = 1; ; intento++) {
+      const datos = await prepararCuenta(req.body);
+      try {
+        c = await prisma.cuentaPorPagar.create({ data: { ...datos, usuarioId: req.user.id }, include: INCLUDE_CUENTA });
+        break;
+      } catch (error) {
+        if (!(error.code === "P2002" && String(error.meta?.target).includes("numeroInterno") && intento < 3)) throw error;
+      }
+    }
     res.status(201).json(conResumen(c, undefined, await estadosAlmacen([c])));
   } catch (error) {
     if (error.code === "P2002") return res.status(409).json({ message: "Ese documento del proveedor ya está registrado" });
@@ -445,12 +556,18 @@ exports.actualizarDocumento = async (req, res) => {
       ...actual,
       fechaEmision: fechaLima(actual.fechaEmision),
       ...req.body,
+      // Una nota de venta conserva su correlativo; el número propio "NV-…" no cuenta como del proveedor.
+      numeroInterno: actual.numeroInterno,
+      ...(actual.numeroInterno
+        && `${req.body.serie ?? actual.serie}-${req.body.numero ?? actual.numero}`.toUpperCase() === actual.numeroInterno
+        && { numero: "" }),
       categoriaActualId: actual.categoriaGastoId,
     });
     const data = actual._count.pagos > 0
       ? {
         descripcion: datos.descripcion, categoriaGastoId: datos.categoriaGastoId, pasaPorAlmacen: datos.pasaPorAlmacen,
         proyectoId: datos.proyectoId, ordenAlmacenId: datos.ordenAlmacenId, movimientoAlmacenId: datos.movimientoAlmacenId,
+        ordenCompraId: datos.ordenCompraId,
       }
       : datos;
     const c = await prisma.cuentaPorPagar.update({ where: { id }, data, include: INCLUDE_CUENTA });
@@ -484,17 +601,17 @@ async function cargarCuenta(id) {
   return conResumen(c, undefined, await estadosAlmacen([c]));
 }
 
-// POST /documentos/:id/adjuntos (multipart "archivo") — foto o PDF del documento (p. ej. nota de venta).
+// POST /documentos/:id/adjuntos (multipart "archivo", uno o varios) — fotos o PDF del documento (p. ej. nota de venta).
 exports.agregarAdjuntoDocumento = async (req, res) => {
   try {
     const id = Number(req.params.id);
-    if (!req.file) throw new ErrorValidacion("Adjunta una imagen o PDF");
+    if (!req.files?.length) throw new ErrorValidacion("Adjunta una imagen o PDF");
     if (!(await prisma.cuentaPorPagar.findUnique({ where: { id }, select: { id: true } }))) throw new ErrorValidacion("Documento no encontrado", 404);
-    const adjunto = await almacenamiento.subir(`documentos/${id}`, req.file);
+    const adjuntos = await almacenamiento.subirTodos(`documentos/${id}`, req.files);
     try {
-      await prisma.adjuntoPago.create({ data: { ...adjunto, cuentaPorPagarId: id, usuarioId: req.user.id } });
+      await prisma.adjuntoPago.createMany({ data: adjuntos.map((a) => ({ ...a, cuentaPorPagarId: id, usuarioId: req.user.id })) });
     } catch (error) {
-      await almacenamiento.borrar([adjunto.ruta]);
+      await almacenamiento.borrar(adjuntos.map((a) => a.ruta));
       throw error;
     }
     res.status(201).json(await cargarCuenta(id));
@@ -566,7 +683,7 @@ exports.registrarPago = async (req, res) => {
     });
 
     // Constancia opcional: se sube antes y, si el pago no se guarda, se borra del bucket.
-    const adjunto = req.file ? await almacenamiento.subir(`pagos/${id}`, req.file) : null;
+    const adjuntos = await almacenamiento.subirTodos(`pagos/${id}`, req.files);
     try {
       await prisma.pagoCuentaPorPagar.create({
         data: {
@@ -574,11 +691,11 @@ exports.registrarPago = async (req, res) => {
           numeroOperacion: texto(req.body.numeroOperacion, 60),
           nota: texto(req.body.nota),
           usuarioId: req.user.id,
-          ...(adjunto && { adjuntos: { create: { ...adjunto, usuarioId: req.user.id } } }),
+          ...(adjuntos.length && { adjuntos: { create: adjuntos.map((a) => ({ ...a, usuarioId: req.user.id })) } }),
         },
       });
     } catch (error) {
-      if (adjunto) await almacenamiento.borrar([adjunto.ruta]);
+      await almacenamiento.borrar(adjuntos.map((a) => a.ruta));
       throw error;
     }
     res.status(201).json(await cargarCuenta(id));
@@ -611,14 +728,14 @@ exports.agregarAdjuntoPago = async (req, res) => {
   try {
     const id = Number(req.params.id);
     const pagoId = Number(req.params.pagoId);
-    if (!req.file) throw new ErrorValidacion("Adjunta una imagen o PDF");
+    if (!req.files?.length) throw new ErrorValidacion("Adjunta una imagen o PDF");
     const pago = await prisma.pagoCuentaPorPagar.findFirst({ where: { id: pagoId, cuentaId: id }, select: { id: true } });
     if (!pago) throw new ErrorValidacion("Pago no encontrado", 404);
-    const adjunto = await almacenamiento.subir(`pagos/${id}`, req.file);
+    const adjuntos = await almacenamiento.subirTodos(`pagos/${id}`, req.files);
     try {
-      await prisma.adjuntoPago.create({ data: { ...adjunto, pagoCuentaPorPagarId: pagoId, usuarioId: req.user.id } });
+      await prisma.adjuntoPago.createMany({ data: adjuntos.map((a) => ({ ...a, pagoCuentaPorPagarId: pagoId, usuarioId: req.user.id })) });
     } catch (error) {
-      await almacenamiento.borrar([adjunto.ruta]);
+      await almacenamiento.borrar(adjuntos.map((a) => a.ruta));
       throw error;
     }
     res.status(201).json(await cargarCuenta(id));
@@ -719,7 +836,7 @@ exports.alertas = async (req, res) => {
       const plazo = plazoDetraccion(fechaLima(c.fechaEmision));
       const dias = diasEntre(hoy, plazo);
       if (dias > 7) continue;
-      detracciones.push({ id: c.id, numero: `${c.serie}-${c.numero}`, nombre: c.proveedor.razonSocial, saldo: pago.saldoDetraccion, plazo, dias });
+      detracciones.push({ id: c.id, numero: etiquetaDocumento(c), nombre: c.proveedor.razonSocial, saldo: pago.saldoDetraccion, plazo, dias });
     }
     res.json({ detracciones: detracciones.sort((a, b) => a.dias - b.dias) });
   } catch (error) {
@@ -751,7 +868,7 @@ exports.resumen = async (req, res) => {
       filas.push({
         origen: "DOCUMENTO", id: c.id,
         proveedorClave: `C${c.proveedorId}`, proveedorNombre: c.proveedor.razonSocial, proveedorDoc: c.proveedor.ruc,
-        documento: `${c.serie}-${c.numero}`, tipoDocumento: c.tipoDocumento, categoriaGasto: c.categoriaGasto,
+        documento: etiquetaDocumento(c), tipoDocumento: c.tipoDocumento, categoriaGasto: c.categoriaGasto,
         proveedorTipo: c.proveedor.tipo, afectaComercializacion: c.proveedor.afectaComercializacion,
         deducible: c.deducible, estadoAlmacen: estados.get(c.id) ?? null,
         descripcion: c.descripcion, proyecto: c.proyecto,
@@ -828,7 +945,7 @@ exports.resumen = async (req, res) => {
 // GET /opciones — catálogos y lo que se puede vincular a un documento.
 exports.opciones = async (req, res) => {
   try {
-    const [proyectos, ordenes, movimientos] = await Promise.all([
+    const [proyectos, ordenes, movimientos, ordenesCompra] = await Promise.all([
       prisma.proyecto.findMany({
         where: { estado: { not: "CANCELADO" } },
         select: { id: true, nombre: true, estado: true, cliente: { select: { nombreComercial: true } } },
@@ -847,8 +964,16 @@ exports.opciones = async (req, res) => {
         orderBy: { fecha: "desc" },
         take: 100,
       }),
+      prisma.ordenCompra.findMany({
+        where: { estado: { in: ["APROBADA", "RECIBIDA_PARCIAL", "RECIBIDA"] } },
+        select: { id: true, numero: true, proveedorId: true, total: true, moneda: true, estado: true, recepciones: { select: { id: true }, orderBy: { id: "desc" }, take: 1 } },
+        orderBy: { id: "desc" },
+        take: 300,
+      }),
     ]);
     res.json({
+      // Órdenes de compra aprobadas, para vincular la factura (el frontend filtra por proveedor).
+      ordenesCompra: ordenesCompra.map(({ recepciones, ...o }) => ({ ...o, ordenAlmacenId: recepciones[0]?.id ?? null })),
       tiposDocumento: TIPOS_DOCUMENTO, categorias: await arbolCategorias(), medios: MEDIOS_PAGO, monedas: MONEDAS,
       proyectos: proyectos.map((p) => ({ id: p.id, nombre: p.nombre, estado: p.estado, cliente: p.cliente?.nombreComercial || null })),
       ordenesAlmacen: ordenes.map((o) => ({
@@ -869,7 +994,7 @@ exports.opciones = async (req, res) => {
 exports.gastoDeProyecto = async (proyectoId) => {
   const cuentas = await prisma.cuentaPorPagar.findMany({
     where: { proyectoId, anulado: false },
-    select: { id: true, serie: true, numero: true, fechaEmision: true, moneda: true, tipoCambio: true, valorVenta: true, total: true, proveedor: { select: { razonSocial: true } } },
+    select: { id: true, serie: true, numero: true, numeroInterno: true, fechaEmision: true, moneda: true, tipoCambio: true, valorVenta: true, total: true, proveedor: { select: { razonSocial: true } } },
     orderBy: { fechaEmision: "asc" },
   });
   const enSoles = (c, v) => (c.moneda === "PEN" ? v : r2(v * (c.tipoCambio || 1)));
@@ -877,8 +1002,11 @@ exports.gastoDeProyecto = async (proyectoId) => {
     // Sin IGV (el IGV de compras es crédito fiscal, no costo del proyecto).
     totalSinIgv: r2(cuentas.reduce((a, c) => a + enSoles(c, c.valorVenta), 0)),
     documentos: cuentas.map((c) => ({
-      id: c.id, documento: `${c.serie}-${c.numero}`, fecha: fechaLima(c.fechaEmision), proveedor: c.proveedor.razonSocial,
+      id: c.id, documento: etiquetaDocumento(c), fecha: fechaLima(c.fechaEmision), proveedor: c.proveedor.razonSocial,
       moneda: c.moneda, valorVenta: c.valorVenta, total: c.total, valorVentaSoles: enSoles(c, c.valorVenta),
     })),
   };
 };
+
+// Para Compras: estado de pago de los documentos vinculados a una orden de compra.
+exports.resumenPago = resumenPago;

@@ -5,6 +5,16 @@ const { generarGlosa } = require("../utils/glosa");
 const { crearProyectoDesdeCotizacion } = require("../services/proyectoBridge");
 const { IGV_RATE, MARGEN_MINIMO } = require("../config/negocio");
 const { leerCondicion } = require("../utils/condicionPago");
+const { Prisma } = require("@prisma/client");
+const { copiaCuentas, cuentasParaDocumentos, cuentasSugeridas } = require("../services/cajaBancos.service");
+
+// Cuentas a guardar en la cotización: las elegidas (body.cuentaBancariaIds) o,
+// si no vienen, las sugeridas en soles (con la de detracciones si pasa de S/ 700).
+async function cuentasDeCotizacion(elegidas, total) {
+  if (elegidas !== undefined) return elegidas ?? Prisma.JsonNull;
+  const sugeridas = cuentasSugeridas(await cuentasParaDocumentos(), { moneda: "PEN", conDetraccion: total > 700 });
+  return sugeridas.length ? sugeridas : Prisma.JsonNull;
+}
 const { crearDesdeCotizacion: crearProyectoInterno } = require("./proyectos.controller");
 
 const registrarLog = (client, { cotizacionId, usuarioId, estadoAnterior, estadoNuevo, comentario }) =>
@@ -135,8 +145,9 @@ exports.crearCotizacion = async (req, res) => {
       solicitudUsada = solicitud;
     }
 
-    let itemsCalculados, condicion;
+    let itemsCalculados, condicion, cuentasElegidas;
     try {
+      cuentasElegidas = await copiaCuentas(req.body.cuentaBancariaIds);
       itemsCalculados = await Promise.all(items.map((item) => calcularItem(prisma, item, margen)));
       // Sin condición en el body, la cotización hereda la del cliente.
       condicion = leerCondicion(req.body) ?? await prisma.cliente.findUnique({
@@ -216,7 +227,7 @@ exports.crearCotizacion = async (req, res) => {
 
     const updated = await prisma.cotizacion.update({
       where: { id: cotizacion.id },
-      data: { total },
+      data: { total, cuentasBancarias: await cuentasDeCotizacion(cuentasElegidas, total) },
       include: {
         cliente: true,
         items: {
@@ -558,9 +569,10 @@ exports.renegociarCotizacion = async (req, res) => {
     if (!Array.isArray(items) || items.length === 0) {
       return res.status(400).json({ message: "La cotización debe tener al menos un item" });
     }
-    let condicion;
+    let condicion, cuentasElegidas;
     try {
       condicion = leerCondicion(req.body);
+      cuentasElegidas = await copiaCuentas(req.body.cuentaBancariaIds);
     } catch (err) {
       return res.status(400).json({ message: err.message });
     }
@@ -647,6 +659,7 @@ exports.renegociarCotizacion = async (req, res) => {
           total,
           conIgv: igvFlag,
           ...condicion,
+          ...(cuentasElegidas !== undefined && { cuentasBancarias: cuentasElegidas ?? Prisma.JsonNull }),
         },
         include: {
           cliente: true,
