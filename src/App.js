@@ -91,6 +91,7 @@ app.use("/api/caja-bancos",      cajaBancosRoutes);
 app.use("/api/libro-mayor",      libroMayorRoutes);
 app.use("/api/flujo-efectivo",   flujoEfectivoRoutes);
 app.use("/api/compras",          comprasRoutes);
+app.use("/api/servicios-netwise", require("./routes/serviciosNetwise.routes"));
 
 // Health check endpoint
 app.get("/api/health", async (req, res) => {

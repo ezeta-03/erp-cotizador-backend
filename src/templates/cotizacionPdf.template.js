@@ -1,5 +1,13 @@
 const { IGV_RATE } = require("../config/negocio");
 const cuentasPdf = require("../utils/cuentasPdf");
+const fs = require("fs");
+const path = require("path");
+
+// Logo de Netwise embebido (las cotizaciones del módulo Netwise llevan su marca).
+let logoNetwise = "";
+try {
+  logoNetwise = `data:image/png;base64,${fs.readFileSync(path.join(__dirname, "../assets/netwise_logo.png")).toString("base64")}`;
+} catch { /* sin logo: se usa el nombre en texto */ }
 
 module.exports = (cotizacion) => {
   const { cliente, items, total, numero, createdAt, estado, conIgv: rawConIgv, cuentasBancarias } = cotizacion;
@@ -171,8 +179,12 @@ ${cuentasPdf.estilos()}
 
 <div class="header">
   <div>
-    <div class="brand">ZAAZMAGO</div>
-    <div class="brand-sub">Publicidad &amp; Diseño</div>
+    ${cotizacion.marca === "NETWISE"
+      ? (logoNetwise
+          ? `<img src="${logoNetwise}" alt="Netwise" style="height:34px;width:auto;display:block" />`
+          : `<div class="brand" style="color:#7c3aed">netwise</div><div class="brand-sub">Agencia Digital</div>`)
+      : `<div class="brand">ZAAZMAGO</div>
+    <div class="brand-sub">Publicidad &amp; Diseño</div>`}
   </div>
   <div class="doc-right">
     <div class="doc-numero">Cotización ${numero || "N/A"}</div>
@@ -224,7 +236,7 @@ ${cuentasPdf(cuentasBancarias)}
 
 <div class="footer">
   <div class="footer-note">Cotización válida por 15 días hábiles desde la fecha de emisión.</div>
-  <div class="footer-brand">ZAAZMAGO</div>
+  <div class="footer-brand">${cotizacion.marca === "NETWISE" ? "NETWISE" : "ZAAZMAGO"}</div>
 </div>
 
 </body>

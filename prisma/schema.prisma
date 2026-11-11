@@ -157,6 +157,9 @@ model Cotizacion {
   solicitudesMargen    SolicitudMargen[]
   proyecto             Proyecto?
   comprobantes         Comprobante[]
+  // NETWISE: cotización del módulo Netwise (servicios de agencia, numeración
+  // NW-año-n, PDF con su marca). Se cobra y factura igual, por Zaazmago.
+  marca                Marca             @default(ZAAZMAGO)
 }
 
 model CotizacionLog {
@@ -190,6 +193,25 @@ model CotizacionItem {
   cotizacion   Cotizacion            @relation(fields: [cotizacionId], references: [id])
   producto     Producto?             @relation(fields: [productoId], references: [id])
   panel        Panel?                @relation(fields: [panelId], references: [id])
+  servicioNetwiseId Int?
+  servicioNetwise   ServicioNetwise?   @relation(fields: [servicioNetwiseId], references: [id])
+}
+
+// Catálogo de servicios de Netwise (agencia digital): precio de venta directo,
+// sin costos ni margen. Separado de Producto (catálogo BTL).
+model ServicioNetwise {
+  id          Int              @id @default(autoincrement())
+  categoria   String
+  nombre      String
+  descripcion String?
+  unidad      String           @default("servicio") // servicio, mes, hora, proyecto, pieza
+  precio      Float
+  activo      Boolean          @default(true)
+  createdAt   DateTime         @default(now())
+  updatedAt   DateTime         @updatedAt
+  items       CotizacionItem[]
+
+  @@index([categoria])
 }
 
 model CotizacionAdicional {

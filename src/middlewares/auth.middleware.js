@@ -11,13 +11,14 @@ async function verificarToken(token, req, res, next) {
 
     const usuario = await prisma.usuario.findUnique({
       where: { id: decoded.id },
-      select: { activo: true },
+      select: { activo: true, marca: true },
     });
     if (!usuario || !usuario.activo) {
       return res.status(401).json({ message: "Cuenta desactivada" });
     }
 
-    req.user = decoded;
+    // La marca se lee de la base: un cambio aplica sin volver a iniciar sesión.
+    req.user = { ...decoded, marca: usuario.marca };
     next();
   } catch {
     res.status(401).json({ message: "Token inválido" });

@@ -3,6 +3,7 @@ const puppeteer = require("puppeteer");
 const cotizacionTemplate = require("../templates/cotizacionPdf.template");
 const { generarGlosa } = require("../utils/glosa");
 const { crearProyectoDesdeCotizacion } = require("../services/proyectoBridge");
+const { esNetwise } = require("../middlewares/netwise.middleware");
 const { IGV_RATE, MARGEN_MINIMO } = require("../config/negocio");
 const { leerCondicion } = require("../utils/condicionPago");
 const { Prisma } = require("@prisma/client");
@@ -29,10 +30,12 @@ const registrarLog = (client, { cotizacionId, usuarioId, estadoAnterior, estadoN
   });
 
 // Siguiente número del vendedor en el año en curso: COT-{vendedor}-{año}-{n}.
+// Las de Netwise llevan su propia serie: NW-{año}-{n}.
 // Toma el mayor n existente (no un conteo), así no se repite aunque haya
 // huecos o cotizaciones de años anteriores.
-async function siguienteNumero(vendedorId) {
-  const prefijo = `COT-${vendedorId}-${new Date().getFullYear()}-`;
+async function siguienteNumero(vendedorId, marca = "ZAAZMAGO") {
+  const anio = new Date().getFullYear();
+  const prefijo = marca === "NETWISE" ? `NW-${anio}-` : `COT-${vendedorId}-${anio}-`;
   const previas = await prisma.cotizacion.findMany({
     where: { numero: { startsWith: prefijo } },
     select: { numero: true },
@@ -51,6 +54,15 @@ const clamp = (v, min = 0.01) => {
 // cliente — así el chequeo de margen mínimo no es decorativo.
 async function calcularItem(client, item, margen) {
   const cantidad = clamp(item.cantidad, 0.01);
+
+  // Servicio Netwise: precio de venta del catálogo, sin margen ni medidas.
+  if (item.servicioNetwiseId) {
+    const servicio = await client.servicioNetwise.findUnique({ where: { id: parseInt(item.servicioNetwiseId) } });
+    if (!servicio) throw new Error(`Servicio ${item.servicioNetwiseId} no existe`);
+    const precio = parseFloat(Number(servicio.precio).toFixed(2));
+    const subtotal = parseFloat((precio * cantidad).toFixed(2));
+    return { precio, subtotal, cantidad, medida: 1, medidaAncho: null, medidaAlto: null, adicionalesValidados: [] };
+  }
 
   if (item.productoId) {
     const producto = await client.producto.findUnique({
@@ -104,7 +116,19 @@ async function calcularItem(client, item, margen) {
     return { precio, subtotal, cantidad, medida: 1, medidaAncho: null, medidaAlto: null, adicionalesValidados: [] };
   }
 
-  throw new Error("El item debe tener productoId o panelId");
+  throw new Error("El item debe tener productoId, panelId o servicioNetwiseId");
+}
+
+// Una cotización Netwise solo lleva servicios Netwise, y viceversa.
+function validarItemsMarca(items, marca) {
+  const netwise = marca === "NETWISE";
+  for (const item of items) {
+    if (netwise !== Boolean(item.servicioNetwiseId)) {
+      throw new Error(netwise
+        ? "Las cotizaciones Netwise solo llevan servicios del catálogo Netwise"
+        : "Los servicios Netwise se cotizan desde el módulo Netwise");
+    }
+  }
 }
 
 /* =========================
@@ -116,15 +140,25 @@ exports.crearCotizacion = async (req, res) => {
 
     const clienteIdInt = parseInt(clienteId);
     const usuarioIdInt = req.user.id;
+    const marca = req.body.marca === "NETWISE" ? "NETWISE" : "ZAAZMAGO";
 
     if (!Array.isArray(items) || items.length === 0) {
       return res.status(400).json({ message: "La cotización debe tener al menos un item" });
     }
+    if (marca === "NETWISE" && !esNetwise(req.user)) {
+      return res.status(403).json({ message: "Solo para el módulo Netwise" });
+    }
+    try {
+      validarItemsMarca(items, marca);
+    } catch (err) {
+      return res.status(400).json({ message: err.message });
+    }
 
-    const margen = margenInput !== undefined ? Number(margenInput) : MARGEN_MINIMO;
+    // Netwise cotiza a precio de catálogo: sin margen ni aprobaciones.
+    const margen = marca === "NETWISE" ? 0 : (margenInput !== undefined ? Number(margenInput) : MARGEN_MINIMO);
     let solicitudUsada = null;
 
-    if (margen < MARGEN_MINIMO) {
+    if (marca !== "NETWISE" && margen < MARGEN_MINIMO) {
       const solicitud = borradorId
         ? await prisma.solicitudMargen.findFirst({
             where: {
@@ -164,6 +198,7 @@ exports.crearCotizacion = async (req, res) => {
         diasCredito: condicion?.diasCredito ?? null,
         usuarioId: usuarioIdInt,
         numero,
+        marca,
         estado: "PENDIENTE",
         total: 0,
         conIgv: conIgv !== undefined ? Boolean(conIgv) : true,
@@ -177,6 +212,7 @@ exports.crearCotizacion = async (req, res) => {
             return {
               productoId: item.productoId ? parseInt(item.productoId) : null,
               panelId: item.panelId ? parseInt(item.panelId) : null,
+              servicioNetwiseId: item.servicioNetwiseId ? parseInt(item.servicioNetwiseId) : null,
               nombre: item.nombre || null,
               cantidad: calc.cantidad,
               medida: calc.medida,
@@ -203,6 +239,7 @@ exports.crearCotizacion = async (req, res) => {
         items: {
           include: {
             producto: true,
+            servicioNetwise: true,
             panel: true,
             adicionales: { include: { adicional: true } },
           },
@@ -215,7 +252,7 @@ exports.crearCotizacion = async (req, res) => {
     let cotizacion;
     for (let intento = 1; ; intento++) {
       try {
-        cotizacion = await crear(await siguienteNumero(usuarioIdInt));
+        cotizacion = await crear(await siguienteNumero(usuarioIdInt, marca));
         break;
       } catch (err) {
         if (err.code !== "P2002" || intento >= 3) throw err;
@@ -233,6 +270,7 @@ exports.crearCotizacion = async (req, res) => {
         items: {
           include: {
             producto: true,
+            servicioNetwise: true,
             panel: true,
             adicionales: { include: { adicional: true } },
           },
@@ -281,6 +319,7 @@ exports.listarCotizaciones = async (req, res) => {
         items: {
           include: {
             producto: true,
+            servicioNetwise: true,
             panel: true,
             adicionales: { include: { adicional: true } },
           },
@@ -469,6 +508,7 @@ exports.obtenerCotizacion = async (req, res) => {
         items: {
           include: {
             producto: true,
+            servicioNetwise: true,
             panel: true,
             adicionales: { include: { adicional: true } },
           },
@@ -535,6 +575,7 @@ exports.misCotizaciones = async (req, res) => {
         items: {
           include: {
             producto: true,
+            servicioNetwise: true,
             panel: true,
             adicionales: { include: { adicional: true } },
           },
@@ -569,18 +610,23 @@ exports.renegociarCotizacion = async (req, res) => {
     if (!Array.isArray(items) || items.length === 0) {
       return res.status(400).json({ message: "La cotización debe tener al menos un item" });
     }
+    if (cotizacion.marca === "NETWISE" && !esNetwise(req.user)) {
+      return res.status(403).json({ message: "Solo para el módulo Netwise" });
+    }
     let condicion, cuentasElegidas;
     try {
+      validarItemsMarca(items, cotizacion.marca);
       condicion = leerCondicion(req.body);
       cuentasElegidas = await copiaCuentas(req.body.cuentaBancariaIds);
     } catch (err) {
       return res.status(400).json({ message: err.message });
     }
 
-    const margen = margenInput !== undefined ? Number(margenInput) : MARGEN_MINIMO;
+    const netwise = cotizacion.marca === "NETWISE";
+    const margen = netwise ? 0 : (margenInput !== undefined ? Number(margenInput) : MARGEN_MINIMO);
     let solicitudUsada = null;
 
-    if (margen < MARGEN_MINIMO) {
+    if (!netwise && margen < MARGEN_MINIMO) {
       const solicitud = await prisma.solicitudMargen.findFirst({
         where: {
           usuarioId: cotizacion.usuarioId,
@@ -626,6 +672,7 @@ exports.renegociarCotizacion = async (req, res) => {
             cotizacionId: Number(id),
             productoId: item.productoId ? parseInt(item.productoId) : null,
             panelId: item.panelId ? parseInt(item.panelId) : null,
+            servicioNetwiseId: item.servicioNetwiseId ? parseInt(item.servicioNetwiseId) : null,
             nombre: item.nombre || null,
             cantidad: calc.cantidad,
             medida: calc.medida,
@@ -666,6 +713,7 @@ exports.renegociarCotizacion = async (req, res) => {
           items: {
             include: {
               producto: true,
+              servicioNetwise: true,
               panel: true,
               adicionales: { include: { adicional: true } },
             },
@@ -710,6 +758,7 @@ exports.generarPdf = async (req, res) => {
         items: {
           include: {
             producto: true,
+            servicioNetwise: true,
             panel: true,
             adicionales: { include: { adicional: true } },
           },
