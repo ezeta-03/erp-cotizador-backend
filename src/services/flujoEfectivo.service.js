@@ -44,17 +44,6 @@ function mesesEntre(desde, hasta) {
 }
 const etiquetaMes = (ym) => `${MESES[Number(ym.slice(5, 7)) - 1]} ${ym.slice(2, 4)}`;
 
-// Mes anterior de "aaaa-mm" y último día de "aaaa-mm" como "aaaa-mm-dd".
-function mesAnterior(ym) {
-  let [a, m] = ym.split("-").map(Number);
-  m -= 1;
-  if (m === 0) { m = 12; a -= 1; }
-  return `${a}-${String(m).padStart(2, "0")}`;
-}
-const ultimoDia = (ym) => {
-  const [a, m] = ym.split("-").map(Number);
-  return new Date(Date.UTC(a, m, 0)).toISOString().slice(0, 10);
-};
 
 // Monto en soles de un cobro/pago. monedaPago: la del documento (la detracción
 // siempre es en soles).
@@ -104,23 +93,24 @@ function agrupador() {
   };
 }
 
-// Saldo de una cuenta al cierre de un mes ("aaaa-mm"). Null si la cuenta aún no
-// tiene saldo inicial a esa fecha.
-function cierreDe(cuenta, movs, ym) {
-  const fin = ultimoDia(ym);
-  if (cuenta.corte > fin) return null;
+// Saldo de una cuenta al inicio de un mes ("aaaa-mm"): su saldo inicial más los
+// movimientos anteriores a ese mes. Null si la cuenta aún no tiene saldo inicial
+// al 1 del mes (su fecha de saldo inicial cae a mitad de mes o después).
+function saldoAlInicioDe(cuenta, movs, ym) {
+  const inicio = `${ym}-01`;
+  if (cuenta.corte > inicio) return null;
   let saldo = cuenta.saldoInicial;
-  for (const m of movs) if (m.fecha <= fin) saldo += m.ingreso - m.egreso;
+  for (const m of movs) if (m.fecha < inicio) saldo += m.ingreso - m.egreso;
   return r2(saldo);
 }
 
-// Saldo de todas las cuentas de una moneda al cierre de un mes. Null si no hay
-// cuentas en esa moneda o alguna todavía no tiene saldo inicial.
-function saldoAlCierre(cuentasMoneda, movsPorCuenta, ym) {
+// Saldo de todas las cuentas de una moneda al inicio de un mes. Null si no hay
+// cuentas en esa moneda o alguna todavía no tiene saldo inicial a esa fecha.
+function saldoAlInicio(cuentasMoneda, movsPorCuenta, ym) {
   if (!cuentasMoneda.length) return null;
   let total = 0;
   for (const c of cuentasMoneda) {
-    const v = cierreDe(c, movsPorCuenta.get(c.id), ym);
+    const v = saldoAlInicioDe(c, movsPorCuenta.get(c.id), ym);
     if (v === null) return null;
     total += v;
   }
@@ -268,8 +258,8 @@ async function flujoEfectivo(desde, hasta) {
     const saldoInicial = {};
     const saldoFinal = {};
     for (const m of meses) {
-      // El saldo inicial del mes es el saldo de las cuentas al cierre del mes anterior.
-      saldoInicial[m] = saldoAlCierre(cuentasMon, movsPorCuenta, mesAnterior(m));
+      // El saldo inicial del mes es el saldo de las cuentas al 1 de ese mes.
+      saldoInicial[m] = saldoAlInicio(cuentasMon, movsPorCuenta, m);
       saldoFinal[m] = saldoInicial[m] === null ? null : r2(saldoInicial[m] + netoMon.meses[m]);
     }
     monedas[mon] = {
