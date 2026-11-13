@@ -60,6 +60,7 @@ const cuentasPorPagarRoutes   = require("./routes/cuentasPorPagar.routes");
 const cajaBancosRoutes        = require("./routes/cajaBancos.routes");
 const libroMayorRoutes        = require("./routes/libroMayor.routes");
 const flujoEfectivoRoutes     = require("./routes/flujoEfectivo.routes");
+const reportesRoutes          = require("./routes/reportes.routes");
 const comprasRoutes            = require("./routes/compras.routes");
 
 // app.use(cors());
@@ -90,6 +91,7 @@ app.use("/api/cuentas-por-pagar", cuentasPorPagarRoutes);
 app.use("/api/caja-bancos",      cajaBancosRoutes);
 app.use("/api/libro-mayor",      libroMayorRoutes);
 app.use("/api/flujo-efectivo",   flujoEfectivoRoutes);
+app.use("/api/reportes",         reportesRoutes);
 app.use("/api/compras",          comprasRoutes);
 app.use("/api/servicios-netwise", require("./routes/serviciosNetwise.routes"));
 
