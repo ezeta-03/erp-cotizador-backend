@@ -20,3 +20,31 @@ exports.recaudo = async (req, res) => {
     res.status(500).json({ message: "Error generando el reporte de recaudo", error: error.message });
   }
 };
+
+// Reportes analíticos: GET /api/reportes/analitica/:tipo?desde&hasta[&formato=xlsx]
+const { TIPOS } = require("../services/reportesAnaliticos.service");
+const { reporteExcel } = require("../services/reporteExcel.service");
+const { emisor } = require("../config/emisor");
+
+exports.analitica = async (req, res) => {
+  try {
+    const generar = TIPOS[req.params.tipo];
+    if (!generar) return res.status(404).json({ message: "Reporte no encontrado" });
+    const hoy = hoyLima();
+    const valida = (v) => /^\d{4}-\d{2}-\d{2}$/.test(v || "");
+    const desde = valida(req.query.desde) ? req.query.desde : `${hoy.slice(0, 4)}-01-01`;
+    const hasta = valida(req.query.hasta) ? req.query.hasta : hoy;
+    if (desde > hasta) return res.status(400).json({ message: "La fecha inicial es posterior a la final" });
+    const reporte = { ...(await generar(desde, hasta)), desde, hasta };
+    if (req.query.formato === "xlsx") {
+      const buf = await reporteExcel(reporte, { empresa: emisor.razonSocial, ruc: emisor.ruc, fecha: `Del ${desde} al ${hasta}` });
+      res.setHeader("Content-Type", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
+      res.setHeader("Content-Disposition", `attachment; filename="${req.params.tipo}-${desde}-al-${hasta}.xlsx"`);
+      return res.send(buf);
+    }
+    res.json(reporte);
+  } catch (error) {
+    console.error("❌ Error en reporte analítico:", error);
+    res.status(500).json({ message: "Error generando el reporte", error: error.message });
+  }
+};
